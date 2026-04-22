@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Anubis-Alpha — Unified design tokens
+ *
+ * Merge decision:
+ *   - Base palette + radii come from Anubis_UI (premium neutrals + mint primary)
+ *   - "Action yellow" preserved as a dedicated token for the contractor
+ *     dashboard's functional call-to-action buttons (Save, Generate AI, etc.)
+ *     This keeps field-worker muscle memory intact while giving marketing
+ *     pages a premium, unified feel.
+ *
+ *   - --primary (mint)  → marketing CTAs, branded highlights, premium feel
+ *   - --action (yellow) → contractor workflow CTAs — "the thing you came here to click"
+ *   - --card (dark)     → proper card contrast on the dark background
+ */
+
+@layer base {
+  :root {
+    /* Surfaces */
+    --background: 210 11% 7%;          /* #0f1114 — near-black */
+    --foreground: 160 14% 93%;         /* #eaf1ee — off-white */
+
+    --card: 220 13% 11%;               /* #171a1f — elevated surface */
+    --card-foreground: 160 14% 93%;
+
+    --popover: 220 13% 11%;
+    --popover-foreground: 160 14% 93%;
+
+    /* Brand — mint/teal (Anubis_UI) */
+    --primary: 165 96% 71%;            /* #7afcd6 */
+    --primary-foreground: 160 8% 6%;
+
+    /* Secondary / muted */
+    --secondary: 220 10% 18%;
+    --secondary-foreground: 160 14% 93%;
+
+    --muted: 220 10% 16%;
+    --muted-foreground: 220 5% 65%;
+
+    --accent: 220 10% 18%;
+    --accent-foreground: 160 14% 93%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 8% 18%;
+    --input: 220 8% 18%;
+    --ring: 165 96% 71%;
+
+    /* Action yellow — preserved from AnubisV2 for contractor workflow CTAs */
+    --action: 48 96% 53%;              /* ≈ yellow-400 */
+    --action-foreground: 0 0% 7%;      /* near-black */
+
+    --radius: 0.75rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html,
+  body {
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+}
+
+/* Subtle scrollbar for dark surfaces */
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 999px;
+  }
+}
