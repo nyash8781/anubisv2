@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Briefcase,
   CalendarDays,
+  FileText,
   MessageSquare,
   Upload,
   Settings,
@@ -27,6 +28,7 @@ type NavItem = {
 const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/jobs", label: "Jobs", icon: Briefcase },
+  { href: "/proposal", label: "Proposals", icon: FileText },
   { href: "/calendar", label: "Calendar", icon: CalendarDays, badge: "Soon" },
   { href: "/outreach", label: "Outreach", icon: MessageSquare, badge: "Soon" },
   { href: "/uploads", label: "Uploads", icon: Upload, badge: "Soon" },
