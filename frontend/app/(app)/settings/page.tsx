@@ -9,7 +9,7 @@ const storageKey = "anubis_global_settings";
 
 const defaultSettings = {
   company_name: "",
-  contractor_logo: "",bg-action text-action-foreground
+  contractor_logo: "",
   company_contact_name: "",
   company_phone: "",
   company_email: "",
