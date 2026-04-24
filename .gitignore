@@ -55,3 +55,7 @@ coverage/
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
+
+# Claude automation — generated docs and state
+Claude/docs/*.md
+Claude/.executor_state.json
