@@ -169,14 +169,12 @@ app.get('/health', (req, res) => {
 
 app.get('/jobs', (req, res) => {
   const jobs = readJobs().map(normalizeJob);
-  writeJobs(jobs);
   res.json(jobs);
 });
 
 app.get('/jobs/:id', (req, res) => {
   const id = Number(req.params.id);
   const jobs = readJobs().map(normalizeJob);
-  writeJobs(jobs);
 
   const job = jobs.find((item) => item.id === id);
   if (!job) {

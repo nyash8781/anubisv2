@@ -1,6 +1,19 @@
 import { supabase } from './supabase'
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '/api'
+// NEXT_PUBLIC_API_URL is REQUIRED. Without it, API calls silently hit
+// /api/* (the Next.js routes folder), causing 404s that look like
+// backend outages. Fail loudly at module load instead.
+if (!process.env.NEXT_PUBLIC_API_URL) {
+  // In dev this will surface immediately on first render.
+  // In production, Vercel build will still complete, but any page that
+  // imports this module will throw — which is the desired behavior.
+  throw new Error(
+    'NEXT_PUBLIC_API_URL is not set. Configure it in your Vercel project ' +
+    'environment (e.g. https://anubis-api.onrender.com).',
+  )
+}
+
+export const API_BASE: string = process.env.NEXT_PUBLIC_API_URL
 
 async function authHeaders(): Promise<Record<string, string>> {
   const {
