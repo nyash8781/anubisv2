@@ -127,29 +127,6 @@ function fmtDate(value?: string) {
   });
 }
 
-function NavLink({
-  href,
-  label,
-  active = false,
-}: {
-  href: string;
-  label: string;
-  active?: boolean;
-}) {
-  return (
-    <Link
-      href={href}
-      className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
-        active
-          ? "bg-action"
-          : "text-gray-300 hover:bg-white/5 hover:text-white"
-      }`}
-    >
-      {label}
-    </Link>
-  );
-}
-
 function InputField({
   label,
   value,
@@ -165,7 +142,7 @@ function InputField({
 }) {
   return (
     <label className="block">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wide ext-muted-foreground">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {label}
       </div>
       <input
@@ -188,7 +165,7 @@ function ReadOnlyField({
 }) {
   return (
     <div className="rounded-xl border border-border/40 bg-muted/40 p-4">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wide ext-muted-foreground">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {label}
       </div>
       <div className="text-sm font-semibold text-white">{value || "N/A"}</div>
@@ -461,10 +438,10 @@ export default function OpportunityDashboardPage() {
                 Email
               </button>
               <Link
-                href="/"
+                href="/jobs"
                 className="rounded-xl border border-yellow-400 px-3 py-2 text-sm font-semibold text-action transition hover:bg-yellow-400 hover:text-action-foreground"
               >
-                Back to Dashboard
+                Back to Jobs
               </Link>
             </div>
           </div>
@@ -486,7 +463,7 @@ export default function OpportunityDashboardPage() {
 
         <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-2xl border border-border/40 bg-card p-5">
-            <div className="text-xs font-semibold uppercase tracking-wide ext-muted-foreground">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Bid
             </div>
             <div className="mt-3 text-2xl font-bold text-white">
@@ -494,7 +471,7 @@ export default function OpportunityDashboardPage() {
             </div>
           </div>
           <div className="rounded-2xl border border-border/40 bg-card p-5">
-            <div className="text-xs font-semibold uppercase tracking-wide ext-muted-foreground">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Payments Received
             </div>
             <div className="mt-3 text-2xl font-bold text-white">
@@ -502,7 +479,7 @@ export default function OpportunityDashboardPage() {
             </div>
           </div>
           <div className="rounded-2xl border border-border/40 bg-card p-5">
-            <div className="text-xs font-semibold uppercase tracking-wide ext-muted-foreground">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Balance Due
             </div>
             <div className="mt-3 text-2xl font-bold text-white">
@@ -510,7 +487,7 @@ export default function OpportunityDashboardPage() {
             </div>
           </div>
           <div className="rounded-2xl border border-border/40 bg-card p-5">
-            <div className="text-xs font-semibold uppercase tracking-wide ext-muted-foreground">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Due Date
             </div>
             <div className="mt-3 text-2xl font-bold text-white">
@@ -520,7 +497,7 @@ export default function OpportunityDashboardPage() {
         </div>
 
         <div className="mb-6 rounded-2xl border border-border/40 bg-card p-5">
-          <div className="mb-4 text-sm font-semibold uppercase tracking-wide ext-muted-foreground">
+          <div className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             Project Life Cycle
           </div>
           <div className="grid gap-3 md:grid-cols-5">
@@ -534,7 +511,7 @@ export default function OpportunityDashboardPage() {
                       ? "border-yellow-400 bg-action"
                       : state === "complete"
                       ? "border-yellow-400/30 bg-yellow-400/10 text-yellow-300"
-                      : "border-border/40 bg-black/20 ext-muted-foreground"
+                      : "border-border/40 bg-black/20 text-muted-foreground"
                   }`}
                 >
                   {milestone}
@@ -630,7 +607,7 @@ export default function OpportunityDashboardPage() {
                 onChange={(value) => setField("service", value)}
               />
               <label className="block">
-                <div className="mb-2 text-xs font-semibold uppercase tracking-wide ext-muted-foreground">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Milestone
                 </div>
                 <select
@@ -675,7 +652,7 @@ export default function OpportunityDashboardPage() {
             </div>
 
             <label className="mt-4 block">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide ext-muted-foreground">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Scope of Work
               </div>
               <textarea
@@ -688,7 +665,7 @@ export default function OpportunityDashboardPage() {
             </label>
 
             <label className="mt-4 block">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide ext-muted-foreground">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Notes
               </div>
               <textarea
@@ -723,7 +700,7 @@ export default function OpportunityDashboardPage() {
             </div>
 
             <div className="mt-6 rounded-2xl border border-border/40 bg-black/20 p-5">
-              <div className="mb-4 text-sm font-semibold uppercase tracking-wide ext-muted-foreground">
+              <div className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 Document Placeholders
               </div>
               <div className="space-y-3">
