@@ -39,6 +39,7 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 *.log
+.obsidian/
 
 # Data (JSON file DB — cleared per-machine, Phase 1 replaces with Supabase)
 backend/data/jobs.json
