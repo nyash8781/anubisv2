@@ -19,6 +19,7 @@ Requirements:
 import anthropic
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -511,6 +512,5 @@ def main() -> None:
     run(repo_root, code_review, scope, plan, state_path, args.resume)
 
 
-import os  # needed for ANTHROPIC_API_KEY check
 if __name__ == "__main__":
     main()

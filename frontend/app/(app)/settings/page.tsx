@@ -244,20 +244,6 @@ export default function InputPage() {
   return (
     <main className="min-h-screen bg-background text-white">
       <div className="mx-auto max-w-7xl px-6 py-6">
-        <div className="mb-6 flex items-center justify-between border-b border-border/40 pb-4">
-          <div className="flex items-center gap-6">
-            <div className="text-xl font-bold tracking-wide text-action">
-              ANUBIS
-            </div>
-          </div>
-
-          <button
-            onClick={saveSettings}
-            className="rounded-xl bg-yellow-400 px-4 py-2 text-sm font-bold text-black"
-          >
-            Save Settings
-          </button>
-        </div>
 
         <section className="mb-6 rounded-2xl border border-border/40 bg-card p-6">
           <div className="text-xs font-bold uppercase tracking-[0.18em] text-action">
@@ -269,7 +255,15 @@ export default function InputPage() {
             proposal settings, integrations, and future-facing preferences
             without changing code.
           </p>
-          <div className="mt-4 text-sm text-gray-300">{feedback || "Ready"}</div>
+          <div className="mt-4 flex items-center justify-between gap-4">
+            <div className="text-sm text-gray-300">{feedback || "Ready"}</div>
+            <button
+              onClick={saveSettings}
+              className="rounded-xl bg-yellow-400 px-4 py-2 text-sm font-bold text-black"
+            >
+              Save Settings
+            </button>
+          </div>
         </section>
 
         <div className="grid gap-6">
@@ -438,7 +432,7 @@ export default function InputPage() {
 
           <SettingsSection
             title="Opportunity Workflow Rules"
-            description="Controls how opportunities behave in the system."
+            description="Controls how opportunities behave in the system. Stale-day thresholds and status defaults are Phase 2 — values are saved but not yet applied by the backend."
           >
             <div className="grid gap-4 md:grid-cols-2">
               <TextInput
@@ -512,7 +506,7 @@ export default function InputPage() {
 
           <SettingsSection
             title="Pipeline and Milestones"
-            description="Controls project stage names and future lifecycle structure."
+            description="Controls project stage names and future lifecycle structure. Phase 2 — milestone customization is not yet applied by the backend."
           >
             <TextInput
               label="Milestone Names"
@@ -540,7 +534,7 @@ export default function InputPage() {
 
           <SettingsSection
             title="Financial and Proposal Settings"
-            description="Controls project financial defaults and future proposal structure."
+            description="Controls project financial defaults and future proposal structure. Phase 2 — proposal generation is not yet implemented."
           >
             <div className="grid gap-4 md:grid-cols-2">
               <TextInput

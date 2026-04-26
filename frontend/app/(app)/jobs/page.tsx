@@ -166,7 +166,7 @@ export default function Home() {
 
             <Link
               href="/opportunity/new"
-              className="self-start rounded-xl bg-action px-4 py-2 text-sm font-bold ext-action-foreground transition hover:bg-yellow-300"
+              className="self-start rounded-xl bg-action px-4 py-2 text-sm font-bold text-action-foreground transition hover:bg-yellow-300"
             >
               New Opportunity
             </Link>
@@ -389,7 +389,7 @@ export default function Home() {
                           <td className="px-4 py-4">
                             <Link
                               href={`/opportunity/${job.id}`}
-                              className="rounded-lg bg-action px-3 py-2 text-xs font-bold ext-action-foreground transition hover:bg-yellow-300"
+                              className="rounded-lg bg-action px-3 py-2 text-xs font-bold text-action-foreground transition hover:bg-yellow-300"
                             >
                               Open
                             </Link>

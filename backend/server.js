@@ -45,6 +45,22 @@ app.use(
 
 app.use(express.json({ limit: '2mb' }));
 
+// --- Auth middleware (Supabase JWT) -------------------------------------
+const { createClient } = require('@supabase/supabase-js');
+
+async function requireAuth(req, res, next) {
+  const header = req.headers['authorization'] || '';
+  const token = header.replace(/^Bearer\s+/i, '').trim();
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
+  const supabase = createClient(env.supabaseUrl, env.supabaseAnonKey);
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+  if (error || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+  req.user = user;
+  next();
+}
+
 // --- Data layer (JSON file — Phase 1 migrates to Supabase) --------------
 const jobsFilePath = path.join(__dirname, 'data', 'jobs.json');
 
@@ -183,7 +199,7 @@ app.get('/jobs/:id', (req, res) => {
   res.json(job);
 });
 
-app.post('/jobs', validate(jobUpsertSchema), (req, res) => {
+app.post('/jobs', requireAuth, validate(jobUpsertSchema), (req, res) => {
   const jobs = readJobs().map(normalizeJob);
   const createdAt = new Date().toISOString();
   const sequence = getDailySequence(jobs, createdAt);
@@ -225,7 +241,7 @@ app.post('/jobs', validate(jobUpsertSchema), (req, res) => {
   res.json(newJob);
 });
 
-app.put('/jobs/:id', validate(jobUpsertSchema), (req, res) => {
+app.put('/jobs/:id', requireAuth, validate(jobUpsertSchema), (req, res) => {
   const id = Number(req.params.id);
   const jobs = readJobs().map(normalizeJob);
   const index = jobs.findIndex((job) => job.id === id);
@@ -261,7 +277,7 @@ app.put('/jobs/:id', validate(jobUpsertSchema), (req, res) => {
   res.json(updated);
 });
 
-app.delete('/jobs/:id', (req, res) => {
+app.delete('/jobs/:id', requireAuth, (req, res) => {
   const id = Number(req.params.id);
   const jobs = readJobs();
   const nextJobs = jobs.filter((job) => job.id !== id);
@@ -272,7 +288,7 @@ app.delete('/jobs/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/jobs/:id/action', validate(actionSchema), (req, res) => {
+app.post('/jobs/:id/action', requireAuth, validate(actionSchema), (req, res) => {
   const id = Number(req.params.id);
   const jobs = readJobs().map(normalizeJob);
   const index = jobs.findIndex((job) => job.id === id);
@@ -302,6 +318,7 @@ app.post('/jobs/:id/action', validate(actionSchema), (req, res) => {
 // --- AI generation endpoint --------------------------------------------
 app.post(
   '/generate-job-insights',
+  requireAuth,
   validate(generateInsightsSchema),
   async (req, res) => {
     try {

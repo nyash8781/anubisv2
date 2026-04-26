@@ -8,7 +8,14 @@ const exampleFilePath = path.resolve(__dirname, '../../.env.example');
 if (fs.existsSync(envFilePath)) {
   dotenv.config({ path: envFilePath });
 } else if (fs.existsSync(exampleFilePath)) {
+  console.warn(
+    '[env] WARNING: backend/.env not found — falling back to .env.example. ' +
+    'Real secrets required for production.'
+  );
   dotenv.config({ path: exampleFilePath });
+} else {
+  console.error('[env] FATAL: Neither backend/.env nor backend/.env.example found. Cannot start.');
+  process.exit(1);
 }
 
 function toNumber(value, fallback) {

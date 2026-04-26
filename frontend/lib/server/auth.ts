@@ -4,6 +4,8 @@ import { createServerClient, supabaseForUser } from './supabase'
 
 type AuthHandler = (user: User, db: SupabaseClient) => Promise<NextResponse>
 
+// Standard pattern for authenticated Next.js API routes.
+// Not yet wired to any route — use this when adding Phase 1 protected endpoints.
 export async function withAuth(
   request: NextRequest,
   handler: AuthHandler,

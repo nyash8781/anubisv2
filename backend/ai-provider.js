@@ -6,8 +6,15 @@
  */
 
 const { env } = require('./src/config/env');
+const Anthropic = require('@anthropic-ai/sdk').default;
 
 const AI_PROVIDER = 'claude';
+
+let _client = null;
+function getClient() {
+  if (!_client) _client = new Anthropic({ apiKey: env.anthropicApiKey });
+  return _client;
+}
 
 async function generate(prompt) {
   if (!env.anthropicApiKey) {
@@ -17,8 +24,7 @@ async function generate(prompt) {
     );
   }
 
-  const Anthropic = require('@anthropic-ai/sdk').default;
-  const client = new Anthropic({ apiKey: env.anthropicApiKey });
+  const client = getClient();
 
   const response = await client.messages.create({
     model: env.anthropicModel,

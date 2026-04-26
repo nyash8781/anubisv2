@@ -32,9 +32,9 @@ function fmt(n: number) {
 }
 
 const OPEN_MILESTONES = ['Site Visit', 'Proposal', 'Construction']
-const ACCENT = '#facc15'
-const GRAY = '#374151'
-const GREEN = '#22c55e'
+const ACCENT = 'hsl(48 96% 53%)'   // --action token
+const GRAY   = 'hsl(220 10% 22%)'  // muted surface for Leads bar
+const GREEN  = 'hsl(142 70% 45%)'  // semantic success for Completed bar
 
 const TOOLTIP_STYLE = {
   contentStyle: {
