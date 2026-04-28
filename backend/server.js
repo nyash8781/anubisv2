@@ -85,10 +85,15 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
-  const { ai } = getServiceStatus();
-  logger.info({ port: PORT, aiConfigured: ai.configured }, 'anubis-backend started');
-  if (!ai.configured) {
-    logger.warn('ANTHROPIC_API_KEY missing — AI endpoints will fail. Set it in backend/.env');
-  }
-});
+// Local dev only — Vercel handles the server lifecycle in production.
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    const { ai } = getServiceStatus();
+    logger.info({ port: PORT, aiConfigured: ai.configured }, 'anubis-backend started');
+    if (!ai.configured) {
+      logger.warn('ANTHROPIC_API_KEY missing — AI endpoints will fail. Set it in backend/.env');
+    }
+  });
+}
+
+module.exports = app;
