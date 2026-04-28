@@ -24,13 +24,13 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
 
 function MarketingHeader() {
   return (
-    <header className="sticky top-0 z-40 border-b border-border/40 bg-background/80 backdrop-blur">
+    <header className="sticky top-0 z-40 border-b border-border bg-white/80 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 md:px-6">
         <Link href="/" className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/15 text-primary">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-electric text-white shadow-sm">
             <Sparkles className="h-4 w-4" />
           </div>
-          <span className="text-base font-semibold tracking-tight">Anubis</span>
+          <span className="font-display text-base font-semibold tracking-tight">Anubis</span>
         </Link>
 
         <nav className="hidden items-center gap-1 md:flex">
@@ -39,7 +39,7 @@ function MarketingHeader() {
               key={link.href}
               href={link.href}
               className={cn(
-                "rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                "rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
               )}
             >
               {link.label}
@@ -62,16 +62,22 @@ function MarketingHeader() {
 
 function MarketingFooter() {
   return (
-    <footer className="border-t border-border/40 bg-background/80">
+    <footer className="border-t border-border bg-white">
       <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-8 md:flex-row md:items-center md:justify-between md:px-6">
+        <div className="flex items-center gap-2">
+          <div className="flex h-6 w-6 items-center justify-center rounded bg-electric text-white">
+            <Sparkles className="h-3 w-3" />
+          </div>
+          <span className="font-display text-sm font-semibold">Anubis</span>
+        </div>
         <p className="text-sm text-muted-foreground">
           © {new Date().getFullYear()} Anubis. Built for contractors who care about the details.
         </p>
         <div className="flex items-center gap-4 text-sm text-muted-foreground">
-          <Link href="/about" className="hover:text-foreground">About</Link>
-          <Link href="/pricing" className="hover:text-foreground">Pricing</Link>
-          <Link href="/faq" className="hover:text-foreground">FAQ</Link>
-          <Link href="/login" className="hover:text-foreground">Sign in</Link>
+          <Link href="/about" className="hover:text-foreground transition-colors">About</Link>
+          <Link href="/pricing" className="hover:text-foreground transition-colors">Pricing</Link>
+          <Link href="/faq" className="hover:text-foreground transition-colors">FAQ</Link>
+          <Link href="/login" className="hover:text-primary transition-colors">Sign in</Link>
         </div>
       </div>
     </footer>

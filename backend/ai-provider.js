@@ -1,14 +1,9 @@
-/**
- * AI provider — Anthropic / Claude.
- *
- * Local-AI (Ollama) support has been removed. Cloud-only by design.
- * Requires ANTHROPIC_API_KEY in the environment.
- */
-
-const { env } = require('./src/config/env');
+const { env } = require('./config/env');
 const Anthropic = require('@anthropic-ai/sdk').default;
 
 const AI_PROVIDER = 'claude';
+const AI_TIMEOUT_MS = 30_000;
+const MAX_RETRIES = 3;
 
 let _client = null;
 function getClient() {
@@ -16,7 +11,7 @@ function getClient() {
   return _client;
 }
 
-async function generate(prompt) {
+async function generate(userMessage, systemMessage = null) {
   if (!env.anthropicApiKey) {
     throw new Error(
       'ANTHROPIC_API_KEY is not set — cannot generate AI response. ' +
@@ -26,21 +21,34 @@ async function generate(prompt) {
 
   const client = getClient();
 
-  const response = await client.messages.create({
-    model: env.anthropicModel,
-    max_tokens: 1024,
-    messages: [{ role: 'user', content: prompt }],
-  });
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`AI request timed out after ${AI_TIMEOUT_MS / 1000}s`)), AI_TIMEOUT_MS)
+    );
 
-  const text = response.content
-    .filter((block) => block.type === 'text')
-    .map((block) => block.text)
-    .join('\n');
+    const params = {
+      model: env.anthropicModel,
+      max_tokens: env.anthropicMaxTokens,
+      messages: [{ role: 'user', content: userMessage }],
+    };
+    if (systemMessage) params.system = systemMessage;
 
-  return text;
+    try {
+      const response = await Promise.race([client.messages.create(params), timeoutPromise]);
+      const text = response.content
+        .filter((block) => block.type === 'text')
+        .map((block) => block.text)
+        .join('\n');
+      return text;
+    } catch (err) {
+      const isRetryable = err.status === 529 || err.status === 500;
+      if (isRetryable && attempt < MAX_RETRIES) {
+        await new Promise((r) => setTimeout(r, 1000 * attempt));
+        continue;
+      }
+      throw err;
+    }
+  }
 }
 
-module.exports = {
-  AI_PROVIDER,
-  generate,
-};
+module.exports = { AI_PROVIDER, generate };

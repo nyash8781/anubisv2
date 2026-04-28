@@ -47,10 +47,15 @@ export default function LoginPage() {
       <Card className="w-full">
         <CardHeader>
           <CardTitle className="text-2xl">Welcome back</CardTitle>
-          <CardDescription>
-            {sent
-              ? "Check your inbox for the magic link."
-              : "Enter your email — we'll send you a one-tap magic link. No passwords."}
+          <CardDescription className="space-y-1">
+            <span className="block font-medium text-foreground">
+              AI-powered opportunity management for contractors.
+            </span>
+            <span className="block">
+              {sent
+                ? "Check your inbox for the magic link."
+                : "Enter your email — we'll send you a one-tap magic link. No passwords."}
+            </span>
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -112,15 +117,6 @@ export default function LoginPage() {
             </div>
           )}
 
-          <p className="pt-4 text-center text-xs text-muted-foreground">
-            Admin?{" "}
-            <Link
-              href="/admin-login"
-              className="font-medium text-foreground underline hover:no-underline"
-            >
-              Sign in with password
-            </Link>
-          </p>
         </CardContent>
       </Card>
     </section>

@@ -24,6 +24,7 @@ const config: Config = {
         foreground: "hsl(var(--foreground))",
         primary: {
           DEFAULT: "hsl(var(--primary))",
+          light: "hsl(var(--primary-light))",
           foreground: "hsl(var(--primary-foreground))",
         },
         secondary: {
@@ -50,12 +51,14 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
-        // Field-action yellow — preserves the AnubisV2 dashboard signal color
-        // for primary actions in contractor workflows (Save, Generate, etc.)
+        // Aliased to primary (Electric Blue) for backward compatibility
         action: {
           DEFAULT: "hsl(var(--action))",
           foreground: "hsl(var(--action-foreground))",
         },
+      },
+      backgroundImage: {
+        electric: "linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary-light)) 100%)",
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -63,8 +66,9 @@ const config: Config = {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
-        sans: ["var(--font-geist-sans)", "system-ui", "sans-serif"],
-        mono: ["var(--font-geist-mono)", "monospace"],
+        sans: ["var(--font-inter)", "system-ui", "sans-serif"],
+        display: ["var(--font-calistoga)", "serif"],
+        mono: ["var(--font-jetbrains-mono)", "monospace"],
       },
       keyframes: {
         "accordion-down": {

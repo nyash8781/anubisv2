@@ -1,14 +1,70 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
+import { ChevronDown, ChevronUp, AlertCircle, RefreshCw } from "lucide-react";
+import { apiGet, apiPut } from "@/lib/api";
+import { Skeleton } from "@/components/ui/skeleton";
 
-// Canonical storage key. Must match the key read by /opportunity/[id]/page.tsx.
-// If you rename this, rename it there too. Fixes P1-02 from the initial review.
-const storageKey = "anubis_global_settings";
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+type Settings = {
+  base_prompt: string;
+  business_context: string;
+  business_name: string;
+  contractor_logo: string;
+  company_contact_name: string;
+  company_phone: string;
+  company_email: string;
+  company_address: string;
+  website: string;
+  license_number: string;
+  tagline: string;
+  tone: string;
+  personalization_level: string;
+  follow_up_length: string;
+  upsell_style: string;
+  proposal_writing_style: string;
+  compliance_language: boolean;
+  reading_level: string;
+  business_type: string;
+  service_area: string;
+  typical_job_size: string;
+  core_services: string;
+  emergency_service: boolean;
+  market_focus: string;
+  business_hours: string;
+  response_time_promise: string;
+  preferred_sales_style: string;
+  internal_notes_for_ai: string;
+  default_email_subject_line: string;
+  email_signature: string;
+  include_price: boolean;
+  include_cta: boolean;
+  sms_style: string;
+  max_sms_length: string;
+  greeting_style: string;
+  closing_style: string;
+  default_contact_method_preference: string;
+  preferred_contact_window: string;
+  default_new_status: string;
+  default_new_milestone: string;
+  stale_lead_days: string;
+  stale_site_visit_days: string;
+  stale_proposal_days: string;
+  stale_construction_days: string;
+  aging_threshold_days: string;
+  auto_mark_contacted_email: boolean;
+  auto_mark_contacted_text: boolean;
+  auto_mark_contacted_call: boolean;
+  allow_draft_contact_actions: boolean;
+  opportunity_id_format: string;
+};
 
-const defaultSettings = {
-  company_name: "",
+const defaults: Settings = {
+  base_prompt: "You are helping a contractor write clear, useful, customer-facing communication.",
+  business_context: "",
+  business_name: "",
   contractor_logo: "",
   company_contact_name: "",
   company_phone: "",
@@ -17,10 +73,6 @@ const defaultSettings = {
   website: "",
   license_number: "",
   tagline: "",
-
-  base_prompt:
-    "You are helping a contractor write clear, useful, customer-facing communication.",
-  business_context: "",
   tone: "Professional",
   personalization_level: "Medium",
   follow_up_length: "Short",
@@ -28,7 +80,16 @@ const defaultSettings = {
   proposal_writing_style: "Professional",
   compliance_language: false,
   reading_level: "Standard",
-
+  business_type: "",
+  service_area: "",
+  typical_job_size: "",
+  core_services: "",
+  emergency_service: false,
+  market_focus: "Residential / Commercial / Both",
+  business_hours: "",
+  response_time_promise: "",
+  preferred_sales_style: "",
+  internal_notes_for_ai: "",
   default_email_subject_line: "Following up on your project",
   email_signature: "",
   include_price: true,
@@ -37,7 +98,8 @@ const defaultSettings = {
   max_sms_length: "320",
   greeting_style: "Standard",
   closing_style: "Standard",
-
+  default_contact_method_preference: "",
+  preferred_contact_window: "",
   default_new_status: "Draft",
   default_new_milestone: "Lead",
   stale_lead_days: "3",
@@ -50,659 +112,315 @@ const defaultSettings = {
   auto_mark_contacted_call: true,
   allow_draft_contact_actions: false,
   opportunity_id_format: "YYMMDDXXXX",
-
-  milestone_names: "Lead, Site Visit, Proposal, Construction, Completed",
-  milestone_order: "Lead, Site Visit, Proposal, Construction, Completed",
-  sub_milestone_structure: "",
-  stage_color_rules: "",
-
-  default_currency: "USD",
-  tax_rate: "",
-  proposal_format: "Standard",
-  include_scope_page: true,
-  include_appendix: false,
-  payment_terms: "",
-  deposit_percentage: "",
-  due_date_default: "",
-  proposal_expiration_days: "",
-  late_fee_language: "",
-  default_line_item_format: "",
-
-  sample_word_doc: "",
-  proposal_template: "",
-  scope_template: "",
-  appendix_template: "",
-  contract_template: "",
-  bom_template: "",
-  submittal_template: "",
-  terms_conditions_template: "",
-  cover_page_template: "",
-  client_welcome_packet_template: "",
-
-  linked_apis: "",
-  email_provider: "",
-  text_provider: "",
-  call_provider: "",
-  sender_email: "",
-  sender_phone_number: "",
-  webhook_status: "",
-  api_mode: "Sandbox",
-
-  business_type: "",
-  service_area: "",
-  typical_job_size: "",
-  core_services: "",
-  emergency_service: false,
-  market_focus: "Residential / Commercial / Both",
-  business_hours: "",
-  response_time_promise: "",
-  preferred_sales_style: "",
-  internal_notes_for_ai: "",
-
-  default_contact_method_preference: "",
-  preferred_contact_window: "",
-  follow_up_cadence: "",
-  voicemail_default_outcome: "",
-
-  show_stale_kpi: true,
-  show_completed_kpi: true,
-  default_homepage_sort: "Newest",
-  theme: "Dark",
-  accent_color: "Yellow",
-  compact_table_mode: false,
-  default_landing_page: "Home",
-
-  reminder_delay_after_no_contact: "",
-  schedule_email_default: "",
-  schedule_text_default: "",
-  daily_digest_toggle: false,
-  escalation_rule: "",
-  due_date_reminder_offset: "",
 };
 
-function SettingsSection({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description: string;
-  children: React.ReactNode;
+// ---------------------------------------------------------------------------
+// Primitive input components
+// ---------------------------------------------------------------------------
+function TextInput({ label, hint, value, onChange, placeholder = "", type = "text" }: {
+  label: string; hint?: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string;
 }) {
   return (
-    <section className="rounded-2xl border border-border/40 bg-card p-6">
-      <div className="mb-5">
-        <h2 className="text-xl font-semibold text-white">{title}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+    <div className="space-y-1">
+      <label className="block text-sm font-medium text-foreground">{label}</label>
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      <input type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
+        className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20" />
+    </div>
+  );
+}
+
+function TextArea({ label, hint, value, onChange, placeholder = "", rows = 3 }: {
+  label: string; hint?: string; value: string; onChange: (v: string) => void; placeholder?: string; rows?: number;
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="block text-sm font-medium text-foreground">{label}</label>
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      <textarea value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} rows={rows}
+        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm leading-6 outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20" />
+    </div>
+  );
+}
+
+function SelectInput({ label, hint, value, onChange, options }: {
+  label: string; hint?: string; value: string; onChange: (v: string) => void; options: string[];
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="block text-sm font-medium text-foreground">{label}</label>
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      <select value={value} onChange={(e) => onChange(e.target.value)}
+        className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20">
+        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select>
+    </div>
+  );
+}
+
+function Toggle({ label, hint, checked, onChange }: {
+  label: string; hint?: string; checked: boolean; onChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="space-y-0.5">
+        <p className="text-sm font-medium text-foreground">{label}</p>
+        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
       </div>
-      <div className="grid gap-4">{children}</div>
-    </section>
+      <button type="button" onClick={() => onChange(!checked)}
+        className={`relative mt-0.5 inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors ${checked ? "bg-primary" : "bg-border"}`}>
+        <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${checked ? "translate-x-4" : "translate-x-0.5"}`} />
+      </button>
+    </div>
   );
 }
 
-function TextInput({
-  label,
-  value,
-  onChange,
-  placeholder = "",
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
+function Section({ title, description, defaultOpen = false, children }: {
+  title: string; description: string; defaultOpen?: boolean; children: React.ReactNode;
 }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
-    <label className="grid gap-2">
-      <span className="text-sm font-medium text-gray-300">{label}</span>
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="rounded-xl border border-border/40 bg-muted/40 px-4 py-3 text-sm text-white outline-none"
-      />
-    </label>
+    <div className="rounded-2xl border border-border bg-white overflow-hidden">
+      <button type="button" onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between px-5 py-4 text-left transition hover:bg-muted/30">
+        <div>
+          <p className="text-sm font-semibold text-foreground">{title}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+        </div>
+        {open ? <ChevronUp className="h-4 w-4 flex-shrink-0 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />}
+      </button>
+      {open && <div className="grid gap-4 border-t border-border px-5 py-5 sm:grid-cols-2">{children}</div>}
+    </div>
   );
 }
 
-function TextAreaInput({
-  label,
-  value,
-  onChange,
-  rows = 4,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  rows?: number;
-}) {
-  return (
-    <label className="grid gap-2">
-      <span className="text-sm font-medium text-gray-300">{label}</span>
-      <textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        rows={rows}
-        className="rounded-xl border border-border/40 bg-muted/40 px-4 py-3 text-sm text-white outline-none"
-      />
-    </label>
-  );
+function Full({ children }: { children: React.ReactNode }) {
+  return <div className="sm:col-span-2">{children}</div>;
 }
 
-function ToggleInput({
-  label,
-  checked,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  onChange: (value: boolean) => void;
-}) {
-  return (
-    <label className="flex items-center justify-between rounded-xl border border-border/40 bg-muted/40 px-4 py-3">
-      <span className="text-sm font-medium text-gray-300">{label}</span>
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-      />
-    </label>
-  );
-}
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
+export default function SettingsPage() {
+  const [s, setS] = useState<Settings>(defaults);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-export default function InputPage() {
-  const [settings, setSettings] = useState(defaultSettings);
-  const [feedback, setFeedback] = useState("");
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(storageKey);
-      if (raw) {
-        setSettings({ ...defaultSettings, ...JSON.parse(raw) });
-      }
-    } catch (error) {
-      console.error(error);
-    }
-  }, []);
-
-  const updateField = (
-    field: keyof typeof defaultSettings,
-    value: string | boolean
-  ) => {
-    setSettings((prev) => ({ ...prev, [field]: value }));
+  const load = () => {
+    setLoadError(false);
+    setLoading(true);
+    apiGet<{ base_prompt: string; business_context: string; extra?: Record<string, unknown> }>("/settings")
+      .then((remote) => {
+        setS({
+          ...defaults,
+          base_prompt: remote.base_prompt || defaults.base_prompt,
+          business_context: remote.business_context || defaults.business_context,
+          ...(remote.extra || {}),
+        } as Settings);
+      })
+      .catch(() => setLoadError(true))
+      .finally(() => setLoading(false));
   };
 
-  const saveSettings = () => {
+  useEffect(() => { load(); }, []);
+
+  function upd<K extends keyof Settings>(key: K, value: Settings[K]) {
+    setS((prev) => ({ ...prev, [key]: value }));
+    setDirty(true);
+  }
+
+  const str = (key: keyof Settings) => (s[key] as string) ?? "";
+  const bool = (key: keyof Settings) => (s[key] as boolean) ?? false;
+
+  async function save() {
+    setSaving(true);
+    setFeedback(null);
+    const { base_prompt, business_context, ...extra } = s;
     try {
-      localStorage.setItem(storageKey, JSON.stringify(settings));
-      setFeedback("Settings saved successfully.");
-    } catch (error) {
-      console.error(error);
-      setFeedback("Failed to save settings.");
+      await apiPut("/settings", { base_prompt, business_context, extra });
+      setFeedback({ type: "success", text: "Settings saved." });
+      setDirty(false);
+    } catch {
+      setFeedback({ type: "error", text: "Failed to save — check your connection." });
+    } finally {
+      setSaving(false);
     }
-  };
+  }
+
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-background p-6">
+        <div className="mx-auto max-w-3xl space-y-3">
+          <Skeleton className="h-8 w-48 rounded-lg" />
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-16 w-full rounded-2xl" />
+          ))}
+        </div>
+      </main>
+    );
+  }
 
   return (
-    <main className="min-h-screen bg-background text-white">
-      <div className="mx-auto max-w-7xl px-6 py-6">
+    <main className="min-h-screen bg-background">
+      <div className="mx-auto max-w-3xl px-4 py-8 space-y-6 pb-32">
 
-        <section className="mb-6 rounded-2xl border border-border/40 bg-card p-6">
-          <div className="text-xs font-bold uppercase tracking-[0.18em] text-action">
-            Input / Global Settings
-          </div>
-          <h1 className="mt-2 text-3xl font-bold">Business Configuration</h1>
-          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            Manage reusable business inputs, AI defaults, workflow rules,
-            proposal settings, integrations, and future-facing preferences
-            without changing code.
-          </p>
-          <div className="mt-4 flex items-center justify-between gap-4">
-            <div className="text-sm text-gray-300">{feedback || "Ready"}</div>
-            <button
-              onClick={saveSettings}
-              className="rounded-xl bg-yellow-400 px-4 py-2 text-sm font-bold text-black"
-            >
-              Save Settings
+        <div className="space-y-1">
+          <h1 className="font-display text-2xl font-semibold text-foreground">Settings</h1>
+          <p className="text-sm text-muted-foreground">Configure how Anubis represents your business and generates AI content.</p>
+        </div>
+
+        {loadError && (
+          <div className="flex items-center justify-between rounded-2xl border border-red-200 bg-red-50 p-4">
+            <div className="flex items-center gap-2 text-sm text-red-700">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              Failed to load settings — check your connection.
+            </div>
+            <button onClick={load} className="flex items-center gap-1.5 rounded-lg border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 transition">
+              <RefreshCw className="h-3.5 w-3.5" /> Retry
             </button>
           </div>
-        </section>
+        )}
 
-        <div className="grid gap-6">
-          <SettingsSection
-            title="Brand and Identity"
-            description="Controls how the company appears throughout the app and future documents."
-          >
-            <div className="grid gap-4 md:grid-cols-2">
-              <TextInput
-                label="Company Name"
-                value={settings.company_name}
-                onChange={(v) => updateField("company_name", v)}
-              />
-              <TextInput
-                label="Contractor Logo"
-                value={settings.contractor_logo}
-                onChange={(v) => updateField("contractor_logo", v)}
-                placeholder="Logo URL or file reference"
-              />
-              <TextInput
-                label="Company Contact Name"
-                value={settings.company_contact_name}
-                onChange={(v) => updateField("company_contact_name", v)}
-              />
-              <TextInput
-                label="Company Phone"
-                value={settings.company_phone}
-                onChange={(v) => updateField("company_phone", v)}
-              />
-              <TextInput
-                label="Company Email"
-                value={settings.company_email}
-                onChange={(v) => updateField("company_email", v)}
-              />
-              <TextInput
-                label="Website"
-                value={settings.website}
-                onChange={(v) => updateField("website", v)}
-              />
-              <TextInput
-                label="License Number"
-                value={settings.license_number}
-                onChange={(v) => updateField("license_number", v)}
-              />
-              <TextInput
-                label="Tagline / Short Brand Message"
-                value={settings.tagline}
-                onChange={(v) => updateField("tagline", v)}
-              />
-            </div>
-            <TextAreaInput
-              label="Company Address"
-              value={settings.company_address}
-              onChange={(v) => updateField("company_address", v)}
-              rows={3}
-            />
-          </SettingsSection>
+        <div className="space-y-3">
 
-          <SettingsSection
-            title="AI Behavior"
-            description="Controls how AI thinks, writes, and formats outputs."
-          >
-            <TextAreaInput
-              label="AI Prompts"
-              value={settings.base_prompt}
-              onChange={(v) => updateField("base_prompt", v)}
-              rows={5}
-            />
-            <TextAreaInput
-              label="Business Context"
-              value={settings.business_context}
-              onChange={(v) => updateField("business_context", v)}
-              rows={5}
-            />
-            <div className="grid gap-4 md:grid-cols-3">
-              <TextInput
-                label="Tone"
-                value={settings.tone}
-                onChange={(v) => updateField("tone", v)}
-              />
-              <TextInput
-                label="Personalization Level"
-                value={settings.personalization_level}
-                onChange={(v) => updateField("personalization_level", v)}
-              />
-              <TextInput
-                label="Follow-Up Length"
-                value={settings.follow_up_length}
-                onChange={(v) => updateField("follow_up_length", v)}
-              />
-              <TextInput
-                label="Upsell Style"
-                value={settings.upsell_style}
-                onChange={(v) => updateField("upsell_style", v)}
-              />
-              <TextInput
-                label="Proposal Writing Style"
-                value={settings.proposal_writing_style}
-                onChange={(v) => updateField("proposal_writing_style", v)}
-              />
-              <TextInput
-                label="Reading Level"
-                value={settings.reading_level}
-                onChange={(v) => updateField("reading_level", v)}
-              />
-            </div>
-            <ToggleInput
-              label="Compliance / Safety Language"
-              checked={settings.compliance_language}
-              onChange={(v) => updateField("compliance_language", v)}
-            />
-          </SettingsSection>
+          {/* ── Business Identity ── */}
+          <Section title="Business Identity" description="Core company info used in communications and documents." defaultOpen>
+            <Full>
+              <TextInput label="Business Name" value={str("business_name")} onChange={(v) => upd("business_name", v)} placeholder="Apex Roofing & Construction" />
+            </Full>
+            <TextInput label="Contact Name" value={str("company_contact_name")} onChange={(v) => upd("company_contact_name", v)} placeholder="John Smith" />
+            <TextInput label="Phone" value={str("company_phone")} onChange={(v) => upd("company_phone", v)} placeholder="(602) 555-0100" type="tel" />
+            <TextInput label="Email" value={str("company_email")} onChange={(v) => upd("company_email", v)} placeholder="info@apexroofing.com" type="email" />
+            <TextInput label="Website" value={str("website")} onChange={(v) => upd("website", v)} placeholder="https://apexroofing.com" />
+            <TextInput label="License Number" value={str("license_number")} onChange={(v) => upd("license_number", v)} placeholder="ROC-123456" />
+            <Full>
+              <TextInput label="Address" value={str("company_address")} onChange={(v) => upd("company_address", v)} placeholder="123 Main St, Phoenix, AZ 85001" />
+            </Full>
+            <Full>
+              <TextInput label="Tagline" value={str("tagline")} onChange={(v) => upd("tagline", v)} placeholder="Built right. Built to last." />
+            </Full>
+            <Full>
+              <TextInput label="Logo URL" hint="Direct link to your company logo image." value={str("contractor_logo")} onChange={(v) => upd("contractor_logo", v)} placeholder="https://..." />
+            </Full>
+          </Section>
 
-          <SettingsSection
-            title="Communication Defaults"
-            description="Controls default messaging style for email and text."
-          >
-            <div className="grid gap-4 md:grid-cols-2">
-              <TextInput
-                label="Default Email Subject Line"
-                value={settings.default_email_subject_line}
-                onChange={(v) =>
-                  updateField("default_email_subject_line", v)
-                }
-              />
-              <TextInput
-                label="SMS Style"
-                value={settings.sms_style}
-                onChange={(v) => updateField("sms_style", v)}
-              />
-              <TextInput
-                label="Max SMS Length"
-                value={settings.max_sms_length}
-                onChange={(v) => updateField("max_sms_length", v)}
-              />
-              <TextInput
-                label="Greeting Style"
-                value={settings.greeting_style}
-                onChange={(v) => updateField("greeting_style", v)}
-              />
-              <TextInput
-                label="Closing Style"
-                value={settings.closing_style}
-                onChange={(v) => updateField("closing_style", v)}
-              />
-            </div>
-            <TextAreaInput
-              label="Email Signature"
-              value={settings.email_signature}
-              onChange={(v) => updateField("email_signature", v)}
-              rows={4}
-            />
-            <div className="grid gap-4 md:grid-cols-2">
-              <ToggleInput
-                label="Include Price"
-                checked={settings.include_price}
-                onChange={(v) => updateField("include_price", v)}
-              />
-              <ToggleInput
-                label="Include CTA"
-                checked={settings.include_cta}
-                onChange={(v) => updateField("include_cta", v)}
-              />
-            </div>
-          </SettingsSection>
+          {/* ── AI Behavior ── */}
+          <Section title="AI Behavior" description="Controls how the AI writes messages and proposals." defaultOpen>
+            <Full>
+              <TextArea label="AI Tone & Style" hint="Core instruction for how the AI should write. One or two sentences."
+                value={str("base_prompt")} onChange={(v) => upd("base_prompt", v)}
+                placeholder="Write in a professional but friendly tone. Be direct and avoid filler words." rows={3} />
+            </Full>
+            <SelectInput label="Tone" value={str("tone")} onChange={(v) => upd("tone", v)} options={["Professional", "Friendly", "Casual", "Formal", "Empathetic"]} />
+            <SelectInput label="Personalization Level" value={str("personalization_level")} onChange={(v) => upd("personalization_level", v)} options={["Low", "Medium", "High"]} />
+            <SelectInput label="Follow-up Length" value={str("follow_up_length")} onChange={(v) => upd("follow_up_length", v)} options={["Short", "Medium", "Long"]} />
+            <SelectInput label="Upsell Style" value={str("upsell_style")} onChange={(v) => upd("upsell_style", v)} options={["Soft", "Moderate", "Direct"]} />
+            <SelectInput label="Proposal Writing Style" value={str("proposal_writing_style")} onChange={(v) => upd("proposal_writing_style", v)} options={["Professional", "Conversational", "Detailed", "Concise"]} />
+            <SelectInput label="Reading Level" value={str("reading_level")} onChange={(v) => upd("reading_level", v)} options={["Simple", "Standard", "Technical"]} />
+            <Full>
+              <Toggle label="Include Compliance Language" hint="Add standard disclaimer / license language to AI-generated content." checked={bool("compliance_language")} onChange={(v) => upd("compliance_language", v)} />
+            </Full>
+          </Section>
 
-          <SettingsSection
-            title="Opportunity Workflow Rules"
-            description="Controls how opportunities behave in the system. Stale-day thresholds and status defaults are Phase 2 — values are saved but not yet applied by the backend."
-          >
-            <div className="grid gap-4 md:grid-cols-2">
-              <TextInput
-                label="Default New Opportunity Status"
-                value={settings.default_new_status}
-                onChange={(v) => updateField("default_new_status", v)}
-              />
-              <TextInput
-                label="Default New Opportunity Milestone"
-                value={settings.default_new_milestone}
-                onChange={(v) => updateField("default_new_milestone", v)}
-              />
-              <TextInput
-                label="Opportunity ID Format"
-                value={settings.opportunity_id_format}
-                onChange={(v) => updateField("opportunity_id_format", v)}
-              />
-              <TextInput
-                label="Aging Threshold (days)"
-                value={settings.aging_threshold_days}
-                onChange={(v) => updateField("aging_threshold_days", v)}
-              />
-            </div>
-            <div className="grid gap-4 md:grid-cols-4">
-              <TextInput
-                label="Lead Stale Days"
-                value={settings.stale_lead_days}
-                onChange={(v) => updateField("stale_lead_days", v)}
-              />
-              <TextInput
-                label="Site Visit Stale Days"
-                value={settings.stale_site_visit_days}
-                onChange={(v) => updateField("stale_site_visit_days", v)}
-              />
-              <TextInput
-                label="Proposal Stale Days"
-                value={settings.stale_proposal_days}
-                onChange={(v) => updateField("stale_proposal_days", v)}
-              />
-              <TextInput
-                label="Construction Stale Days"
-                value={settings.stale_construction_days}
-                onChange={(v) => updateField("stale_construction_days", v)}
-              />
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <ToggleInput
-                label="Auto-Mark Contacted on Email"
-                checked={settings.auto_mark_contacted_email}
-                onChange={(v) => updateField("auto_mark_contacted_email", v)}
-              />
-              <ToggleInput
-                label="Auto-Mark Contacted on Text"
-                checked={settings.auto_mark_contacted_text}
-                onChange={(v) => updateField("auto_mark_contacted_text", v)}
-              />
-              <ToggleInput
-                label="Auto-Mark Contacted on Call"
-                checked={settings.auto_mark_contacted_call}
-                onChange={(v) => updateField("auto_mark_contacted_call", v)}
-              />
-              <ToggleInput
-                label="Allow Draft Contact Actions"
-                checked={settings.allow_draft_contact_actions}
-                onChange={(v) =>
-                  updateField("allow_draft_contact_actions", v)
-                }
-              />
-            </div>
-          </SettingsSection>
+          {/* ── Business Profile ── */}
+          <Section title="Business Profile" description="Background about your company the AI uses when generating content.">
+            <Full>
+              <TextArea label="Business Context" hint="Services, geography, specialties — anything the AI should know."
+                value={str("business_context")} onChange={(v) => upd("business_context", v)}
+                placeholder="We specialize in commercial flat roofing in the Phoenix metro area. Most projects are $15k–$80k." rows={4} />
+            </Full>
+            <TextInput label="Business Type" value={str("business_type")} onChange={(v) => upd("business_type", v)} placeholder="General Contractor" />
+            <TextInput label="Service Area" value={str("service_area")} onChange={(v) => upd("service_area", v)} placeholder="Phoenix Metro, AZ" />
+            <TextInput label="Typical Job Size" value={str("typical_job_size")} onChange={(v) => upd("typical_job_size", v)} placeholder="$15k – $80k" />
+            <SelectInput label="Market Focus" value={str("market_focus")} onChange={(v) => upd("market_focus", v)} options={["Residential", "Commercial", "Residential / Commercial / Both", "Industrial"]} />
+            <TextInput label="Business Hours" value={str("business_hours")} onChange={(v) => upd("business_hours", v)} placeholder="Mon–Fri 7am–5pm" />
+            <TextInput label="Response Time Promise" value={str("response_time_promise")} onChange={(v) => upd("response_time_promise", v)} placeholder="Within 2 business hours" />
+            <TextInput label="Preferred Sales Style" value={str("preferred_sales_style")} onChange={(v) => upd("preferred_sales_style", v)} placeholder="Consultative, education-first" />
+            <Full>
+              <TextArea label="Core Services" value={str("core_services")} onChange={(v) => upd("core_services", v)} placeholder="Roof replacement, flat roofing, gutters, skylights" rows={2} />
+            </Full>
+            <Full>
+              <TextArea label="Internal Notes for AI" hint="Private notes the AI uses but never shows to customers." value={str("internal_notes_for_ai")} onChange={(v) => upd("internal_notes_for_ai", v)} placeholder="Avoid mentioning competitor X. Always emphasize our 10-year warranty." rows={2} />
+            </Full>
+            <Full>
+              <Toggle label="Offers Emergency Service" checked={bool("emergency_service")} onChange={(v) => upd("emergency_service", v)} />
+            </Full>
+          </Section>
 
-          <SettingsSection
-            title="Pipeline and Milestones"
-            description="Controls project stage names and future lifecycle structure. Phase 2 — milestone customization is not yet applied by the backend."
-          >
-            <TextInput
-              label="Milestone Names"
-              value={settings.milestone_names}
-              onChange={(v) => updateField("milestone_names", v)}
-            />
-            <TextInput
-              label="Milestone Order"
-              value={settings.milestone_order}
-              onChange={(v) => updateField("milestone_order", v)}
-            />
-            <TextAreaInput
-              label="Sub-Milestone Structure"
-              value={settings.sub_milestone_structure}
-              onChange={(v) => updateField("sub_milestone_structure", v)}
-              rows={3}
-            />
-            <TextAreaInput
-              label="Stage Color Rules"
-              value={settings.stage_color_rules}
-              onChange={(v) => updateField("stage_color_rules", v)}
-              rows={3}
-            />
-          </SettingsSection>
+          {/* ── Email & SMS ── */}
+          <Section title="Email & SMS" description="Defaults for outbound communications.">
+            <Full>
+              <TextInput label="Default Email Subject Line" value={str("default_email_subject_line")} onChange={(v) => upd("default_email_subject_line", v)} placeholder="Following up on your project" />
+            </Full>
+            <Full>
+              <TextArea label="Email Signature" value={str("email_signature")} onChange={(v) => upd("email_signature", v)} placeholder="John Smith | Apex Roofing | (602) 555-0100" rows={3} />
+            </Full>
+            <SelectInput label="SMS Style" value={str("sms_style")} onChange={(v) => upd("sms_style", v)} options={["Friendly", "Professional", "Brief"]} />
+            <SelectInput label="Max SMS Length" value={str("max_sms_length")} onChange={(v) => upd("max_sms_length", v)} options={["160", "320", "480", "640"]} />
+            <SelectInput label="Greeting Style" value={str("greeting_style")} onChange={(v) => upd("greeting_style", v)} options={["Standard", "Formal", "Casual", "First name only"]} />
+            <SelectInput label="Closing Style" value={str("closing_style")} onChange={(v) => upd("closing_style", v)} options={["Standard", "Formal", "Warm", "Brief"]} />
+            <Full>
+              <Toggle label="Include Price in Messages" hint="Allow AI to reference dollar amounts in generated email/SMS." checked={bool("include_price")} onChange={(v) => upd("include_price", v)} />
+            </Full>
+            <Full>
+              <Toggle label="Include Call-to-Action" hint="AI will end messages with a clear next step." checked={bool("include_cta")} onChange={(v) => upd("include_cta", v)} />
+            </Full>
+          </Section>
 
-          <SettingsSection
-            title="Financial and Proposal Settings"
-            description="Controls project financial defaults and future proposal structure. Phase 2 — proposal generation is not yet implemented."
-          >
-            <div className="grid gap-4 md:grid-cols-2">
-              <TextInput
-                label="Default Currency"
-                value={settings.default_currency}
-                onChange={(v) => updateField("default_currency", v)}
-              />
-              <TextInput
-                label="Tax Rate"
-                value={settings.tax_rate}
-                onChange={(v) => updateField("tax_rate", v)}
-              />
-              <TextInput
-                label="Proposal Format"
-                value={settings.proposal_format}
-                onChange={(v) => updateField("proposal_format", v)}
-              />
-              <TextInput
-                label="Payment Terms"
-                value={settings.payment_terms}
-                onChange={(v) => updateField("payment_terms", v)}
-              />
-              <TextInput
-                label="Deposit Percentage"
-                value={settings.deposit_percentage}
-                onChange={(v) => updateField("deposit_percentage", v)}
-              />
-              <TextInput
-                label="Due Date Default"
-                value={settings.due_date_default}
-                onChange={(v) => updateField("due_date_default", v)}
-              />
-              <TextInput
-                label="Proposal Expiration Days"
-                value={settings.proposal_expiration_days}
-                onChange={(v) => updateField("proposal_expiration_days", v)}
-              />
-              <TextInput
-                label="Default Line Item Format"
-                value={settings.default_line_item_format}
-                onChange={(v) => updateField("default_line_item_format", v)}
-              />
-            </div>
-            <TextAreaInput
-              label="Late Fee Language"
-              value={settings.late_fee_language}
-              onChange={(v) => updateField("late_fee_language", v)}
-              rows={3}
-            />
-            <div className="grid gap-4 md:grid-cols-2">
-              <ToggleInput
-                label="Include Scope of Work Page"
-                checked={settings.include_scope_page}
-                onChange={(v) => updateField("include_scope_page", v)}
-              />
-              <ToggleInput
-                label="Include Appendix"
-                checked={settings.include_appendix}
-                onChange={(v) => updateField("include_appendix", v)}
-              />
-            </div>
-          </SettingsSection>
+          {/* ── Contact Preferences ── */}
+          <Section title="Contact Preferences" description="Defaults for how and when to reach customers.">
+            <SelectInput label="Default Contact Method" value={str("default_contact_method_preference")} onChange={(v) => upd("default_contact_method_preference", v)} options={["", "Call", "Text", "Email"]} />
+            <TextInput label="Preferred Contact Window" value={str("preferred_contact_window")} onChange={(v) => upd("preferred_contact_window", v)} placeholder="Weekdays 9am–5pm" />
+          </Section>
 
-          <SettingsSection
-            title="Business Profile and Operating Context"
-            description="Controls broader business information used by workflow and AI."
-          >
-            <div className="grid gap-4 md:grid-cols-2">
-              <TextInput
-                label="Business Type"
-                value={settings.business_type}
-                onChange={(v) => updateField("business_type", v)}
-              />
-              <TextInput
-                label="Service Area"
-                value={settings.service_area}
-                onChange={(v) => updateField("service_area", v)}
-              />
-              <TextInput
-                label="Typical Job Size"
-                value={settings.typical_job_size}
-                onChange={(v) => updateField("typical_job_size", v)}
-              />
-              <TextInput
-                label="Core Services"
-                value={settings.core_services}
-                onChange={(v) => updateField("core_services", v)}
-              />
-              <TextInput
-                label="Market Focus"
-                value={settings.market_focus}
-                onChange={(v) => updateField("market_focus", v)}
-              />
-              <TextInput
-                label="Business Hours"
-                value={settings.business_hours}
-                onChange={(v) => updateField("business_hours", v)}
-              />
-              <TextInput
-                label="Response Time Promise"
-                value={settings.response_time_promise}
-                onChange={(v) => updateField("response_time_promise", v)}
-              />
-              <TextInput
-                label="Preferred Sales Style"
-                value={settings.preferred_sales_style}
-                onChange={(v) => updateField("preferred_sales_style", v)}
-              />
-            </div>
-            <TextAreaInput
-              label="Internal Notes for AI"
-              value={settings.internal_notes_for_ai}
-              onChange={(v) => updateField("internal_notes_for_ai", v)}
-              rows={4}
-            />
-            <div className="grid gap-4 md:grid-cols-2">
-              <ToggleInput
-                label="Emergency Service"
-                checked={settings.emergency_service}
-                onChange={(v) => updateField("emergency_service", v)}
-              />
-            </div>
-          </SettingsSection>
+          {/* ── Pipeline Defaults ── */}
+          <Section title="Pipeline Defaults" description="Starting values and stale-lead thresholds for new opportunities.">
+            <SelectInput label="Default New Status" value={str("default_new_status")} onChange={(v) => upd("default_new_status", v)} options={["Draft", "New", "Contacted"]} />
+            <SelectInput label="Default New Milestone" value={str("default_new_milestone")} onChange={(v) => upd("default_new_milestone", v)} options={["Lead", "Site Visit", "Proposal", "Construction"]} />
+            <TextInput label="Stale — Lead (days)" value={str("stale_lead_days")} onChange={(v) => upd("stale_lead_days", v)} placeholder="3" type="number" />
+            <TextInput label="Stale — Site Visit (days)" value={str("stale_site_visit_days")} onChange={(v) => upd("stale_site_visit_days", v)} placeholder="5" type="number" />
+            <TextInput label="Stale — Proposal (days)" value={str("stale_proposal_days")} onChange={(v) => upd("stale_proposal_days", v)} placeholder="5" type="number" />
+            <TextInput label="Stale — Construction (days)" value={str("stale_construction_days")} onChange={(v) => upd("stale_construction_days", v)} placeholder="7" type="number" />
+            <TextInput label="Aging Threshold (days)" hint="Mark opportunity as old after this many days total." value={str("aging_threshold_days")} onChange={(v) => upd("aging_threshold_days", v)} placeholder="60" type="number" />
+            <TextInput label="Opportunity ID Format" value={str("opportunity_id_format")} onChange={(v) => upd("opportunity_id_format", v)} placeholder="YYMMDDXXXX" />
+            <Full>
+              <div className="space-y-3">
+                <Toggle label="Auto-mark Contacted on Email" checked={bool("auto_mark_contacted_email")} onChange={(v) => upd("auto_mark_contacted_email", v)} />
+                <Toggle label="Auto-mark Contacted on Text" checked={bool("auto_mark_contacted_text")} onChange={(v) => upd("auto_mark_contacted_text", v)} />
+                <Toggle label="Auto-mark Contacted on Call" checked={bool("auto_mark_contacted_call")} onChange={(v) => upd("auto_mark_contacted_call", v)} />
+                <Toggle label="Allow Contact Actions on Draft Opportunities" checked={bool("allow_draft_contact_actions")} onChange={(v) => upd("allow_draft_contact_actions", v)} />
+              </div>
+            </Full>
+          </Section>
 
-          <SettingsSection
-            title="Homepage and UI Preferences"
-            description="Controls global display preferences and dashboard emphasis."
+        </div>
+
+        {feedback && (
+          <div className={`rounded-xl border px-4 py-3 text-sm font-medium ${
+            feedback.type === "success" ? "border-green-500/30 bg-green-50 text-green-700" : "border-red-500/30 bg-red-50 text-red-700"
+          }`}>
+            {feedback.text}
+          </div>
+        )}
+
+      </div>
+
+      {/* Sticky save bar */}
+      <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-white/95 backdrop-blur-sm px-6 py-3">
+        <div className="mx-auto flex max-w-3xl items-center justify-between gap-4">
+          <span className="text-xs text-muted-foreground">
+            {dirty ? "You have unsaved changes" : feedback?.type === "success" ? "All changes saved" : "Settings"}
+          </span>
+          <button
+            onClick={save}
+            disabled={saving || !dirty}
+            className="rounded-xl bg-electric px-6 py-2 text-sm font-bold text-white shadow-sm transition hover:opacity-90 disabled:opacity-50"
           >
-            <div className="grid gap-4 md:grid-cols-2">
-              <TextInput
-                label="Default Homepage Sort"
-                value={settings.default_homepage_sort}
-                onChange={(v) => updateField("default_homepage_sort", v)}
-              />
-              <TextInput
-                label="Theme"
-                value={settings.theme}
-                onChange={(v) => updateField("theme", v)}
-              />
-              <TextInput
-                label="Accent Color"
-                value={settings.accent_color}
-                onChange={(v) => updateField("accent_color", v)}
-              />
-              <TextInput
-                label="Default Landing Page"
-                value={settings.default_landing_page}
-                onChange={(v) => updateField("default_landing_page", v)}
-              />
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <ToggleInput
-                label="Show Stale KPI"
-                checked={settings.show_stale_kpi}
-                onChange={(v) => updateField("show_stale_kpi", v)}
-              />
-              <ToggleInput
-                label="Show Completed KPI"
-                checked={settings.show_completed_kpi}
-                onChange={(v) => updateField("show_completed_kpi", v)}
-              />
-              <ToggleInput
-                label="Compact Table Mode"
-                checked={settings.compact_table_mode}
-                onChange={(v) => updateField("compact_table_mode", v)}
-              />
-            </div>
-          </SettingsSection>
+            {saving ? "Saving…" : "Save Settings"}
+          </button>
         </div>
       </div>
     </main>

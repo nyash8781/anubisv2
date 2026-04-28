@@ -2,53 +2,20 @@
 
 import Link from "next/link";
 import React, { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { AlertCircle, RefreshCw } from "lucide-react";
 import { apiGet, apiPost } from "@/lib/api";
+import type { Job } from "@/types/job";
+import { Skeleton } from "@/components/ui/skeleton";
 
-type Job = {
-  id?: number;
-  opportunity_id?: string;
-  customer_name?: string;
-  first_name?: string;
-  last_name?: string;
-  email?: string;
-  phone?: string;
-  address?: string;
-  city?: string;
-  state?: string;
-  zip_code?: string;
-  service?: string;
-  price?: string | number;
-  notes?: string;
-  milestone?: string;
-  status?: string;
-  contact_status?: string;
-  last_contacted_date?: string;
-  last_contact_method?: string;
-  created_at?: string;
-  flags?: {
-    isStale?: boolean;
-    isAged?: boolean;
-    agedType?: string;
-  };
-};
-
-/**
- * Prefer structured first/last fields. Only split customer_name as a fallback.
- * Fixes P3-01 from the initial review.
- */
 function displayName(job: Job) {
   const first = (job.first_name || "").trim();
   const last = (job.last_name || "").trim();
-  if (first || last) {
-    return { first: first || "—", last: last || "—" };
-  }
+  if (first || last) return { first: first || "—", last: last || "—" };
   const name = (job.customer_name || "").trim();
   if (!name) return { first: "N/A", last: "N/A" };
   const parts = name.split(/\s+/);
-  return {
-    first: parts[0] || "N/A",
-    last: parts.slice(1).join(" ") || "—",
-  };
+  return { first: parts[0] || "N/A", last: parts.slice(1).join(" ") || "—" };
 }
 
 function fallbackOpportunityId(job: Job, index: number) {
@@ -63,6 +30,8 @@ function fallbackOpportunityId(job: Job, index: number) {
 
 export default function Home() {
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -70,27 +39,23 @@ export default function Home() {
   const [showStaleOnly, setShowStaleOnly] = useState(false);
 
   const loadJobs = async () => {
+    setError(false);
     try {
       const data = await apiGet<Job[]>("/jobs");
       setJobs(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error(error);
-      setJobs([]);
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
     }
   };
 
-  useEffect(() => {
-    loadJobs();
-  }, []);
+  useEffect(() => { loadJobs(); }, []);
 
   const summary = useMemo(() => {
     const total = jobs.length;
-    const contacted = jobs.filter(
-      (j) => (j.contact_status || j.status) === "Contacted"
-    ).length;
-    const completed = jobs.filter(
-      (j) => (j.milestone || "").toLowerCase() === "completed"
-    ).length;
+    const contacted = jobs.filter((j) => (j.contact_status || j.status) === "Contacted").length;
+    const completed = jobs.filter((j) => (j.milestone || "").toLowerCase() === "completed").length;
     const stale = jobs.filter((j) => j.flags?.isStale).length;
     return { total, contacted, completed, stale };
   }, [jobs]);
@@ -98,25 +63,13 @@ export default function Home() {
   const filteredJobs = useMemo(() => {
     return jobs.filter((job, index) => {
       const opportunityId = fallbackOpportunityId(job, index).toLowerCase();
-      const fullName = `${job.first_name || ""} ${job.last_name || ""} ${
-        job.customer_name || ""
-      }`
-        .toLowerCase()
-        .trim();
-      const matchesSearch =
-        !search ||
-        fullName.includes(search.toLowerCase()) ||
-        opportunityId.includes(search.toLowerCase());
-
+      const fullName = `${job.first_name || ""} ${job.last_name || ""} ${job.customer_name || ""}`.toLowerCase().trim();
+      const matchesSearch = !search || fullName.includes(search.toLowerCase()) || opportunityId.includes(search.toLowerCase());
       const jobStatus = String(job.status || job.contact_status || "New");
       const matchesStatus = statusFilter === "All" || jobStatus === statusFilter;
-
       const jobMilestone = String(job.milestone || "Lead");
-      const matchesMilestone =
-        milestoneFilter === "All" || jobMilestone === milestoneFilter;
-
+      const matchesMilestone = milestoneFilter === "All" || jobMilestone === milestoneFilter;
       const matchesStale = !showStaleOnly || !!job.flags?.isStale;
-
       return matchesSearch && matchesStatus && matchesMilestone && matchesStale;
     });
   }, [jobs, search, statusFilter, milestoneFilter, showStaleOnly]);
@@ -126,17 +79,18 @@ export default function Home() {
     setExpandedId((prev) => (prev === id ? null : id));
   };
 
-  const runAction = async (
-    id: number | undefined,
-    type: "phone" | "email" | "text"
-  ) => {
+  const ACTION_LABELS: Record<string, string> = { phone: "Phone call", email: "Email", text: "Text" };
+
+  const runAction = async (id: number | undefined, type: "phone" | "email" | "text") => {
     if (!id) return;
     const mappedType = type === "phone" ? "call" : type;
+    const toastId = toast.loading(`Logging ${ACTION_LABELS[type]}…`);
     try {
       await apiPost(`/jobs/${id}/action`, { type: mappedType });
       await loadJobs();
-    } catch (error) {
-      console.error(error);
+      toast.success(`${ACTION_LABELS[type]} logged`, { id: toastId });
+    } catch {
+      toast.error(`Failed to log ${ACTION_LABELS[type]}`, { id: toastId });
     }
   };
 
@@ -148,79 +102,63 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-background text-white">
+    <main className="min-h-screen bg-background">
       <div className="mx-auto max-w-7xl px-6 py-6 space-y-6">
-        <section className="rounded-2xl border border-border/40 bg-card p-5">
+        <section className="rounded-2xl border border-border bg-white p-5">
           <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
             <div className="space-y-2">
               <div>
-                <div className="text-xs font-bold uppercase tracking-[0.2em] text-action">
-                  Jobs
-                </div>
-                <h1 className="mt-1 text-3xl font-bold">Opportunities</h1>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Table-first opportunity management with fast actions.
-                </p>
+                <div className="text-xs font-bold uppercase tracking-[0.2em] text-primary">Jobs</div>
+                <h1 className="mt-1 font-display text-3xl font-normal">Opportunities</h1>
+                <p className="mt-1 text-sm text-muted-foreground">Table-first opportunity management with fast actions.</p>
               </div>
             </div>
-
-            <Link
-              href="/opportunity/new"
-              className="self-start rounded-xl bg-action px-4 py-2 text-sm font-bold text-action-foreground transition hover:bg-yellow-300"
-            >
+            <Link href="/opportunity/new" className="self-start rounded-xl bg-electric px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:opacity-90">
               New Opportunity
             </Link>
           </div>
 
           <div className="mt-5 grid gap-3 md:grid-cols-4">
-            <div className="rounded-xl border border-border/40 bg-black/20 p-4">
-              <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                Total
+            {[
+              { label: "Total", value: summary.total },
+              { label: "Contacted", value: summary.contacted },
+              { label: "Completed", value: summary.completed },
+              { label: "Stale", value: summary.stale },
+            ].map((c) => (
+              <div key={c.label} className="rounded-xl border border-border bg-muted/30 p-4">
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">{c.label}</div>
+                <div className="mt-2 text-2xl font-bold text-primary">{c.value}</div>
               </div>
-              <div className="mt-2 text-2xl font-bold text-action">
-                {summary.total}
-              </div>
-            </div>
-            <div className="rounded-xl border border-border/40 bg-black/20 p-4">
-              <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                Contacted
-              </div>
-              <div className="mt-2 text-2xl font-bold text-action">
-                {summary.contacted}
-              </div>
-            </div>
-            <div className="rounded-xl border border-border/40 bg-black/20 p-4">
-              <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                Completed
-              </div>
-              <div className="mt-2 text-2xl font-bold text-action">
-                {summary.completed}
-              </div>
-            </div>
-            <div className="rounded-xl border border-border/40 bg-black/20 p-4">
-              <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                Stale
-              </div>
-              <div className="mt-2 text-2xl font-bold text-action">
-                {summary.stale}
-              </div>
-            </div>
+            ))}
           </div>
         </section>
 
-        <section className="rounded-2xl border border-border/40 bg-card p-5">
+        {error && (
+          <section className="flex items-center justify-between rounded-2xl border border-red-200 bg-red-50 p-4">
+            <div className="flex items-center gap-2 text-sm text-red-700">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              Failed to load opportunities — check your connection.
+            </div>
+            <button onClick={loadJobs} className="flex items-center gap-1.5 rounded-lg border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 transition">
+              <RefreshCw className="h-3.5 w-3.5" /> Retry
+            </button>
+          </section>
+        )}
+
+        <section className="rounded-2xl border border-border bg-white p-5">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by customer or opportunity ID"
-              className="w-full rounded-xl border border-border/40 bg-muted/40 px-4 py-2.5 text-sm text-white outline-none placeholder:text-gray-500 lg:max-w-md"
+              className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring lg:max-w-md"
             />
 
             <select
+              aria-label="Filter by status"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="rounded-xl border border-border/40 bg-muted/40 px-4 py-2.5 text-sm text-white outline-none"
+              className="rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground outline-none"
             >
               <option>All</option>
               <option>Draft</option>
@@ -230,9 +168,10 @@ export default function Home() {
             </select>
 
             <select
+              aria-label="Filter by milestone"
               value={milestoneFilter}
               onChange={(e) => setMilestoneFilter(e.target.value)}
-              className="rounded-xl border border-border/40 bg-muted/40 px-4 py-2.5 text-sm text-white outline-none"
+              className="rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground outline-none"
             >
               <option>All</option>
               <option>Lead</option>
@@ -242,7 +181,7 @@ export default function Home() {
               <option>Completed</option>
             </select>
 
-            <label className="flex items-center gap-2 text-sm text-gray-300">
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
               <input
                 type="checkbox"
                 checked={showStaleOnly}
@@ -253,18 +192,18 @@ export default function Home() {
 
             <button
               onClick={clearFilters}
-              className="rounded-xl border border-border/40 px-4 py-2.5 text-sm font-semibold text-white transition hover:border-yellow-400 hover:text-action"
+              className="rounded-xl border border-border px-4 py-2.5 text-sm font-semibold text-foreground transition hover:border-primary hover:text-primary"
             >
               Clear
             </button>
           </div>
         </section>
 
-        <section className="rounded-2xl border border-border/40 bg-card p-5">
+        <section className="rounded-2xl border border-border bg-white p-5">
           <div className="overflow-x-auto">
             <table className="min-w-full border-collapse">
               <thead>
-                <tr className="border-b border-border/40 text-left text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                <tr className="border-b border-border text-left text-xs uppercase tracking-[0.15em] text-muted-foreground">
                   <th className="px-4 py-3 font-semibold">Opportunity ID</th>
                   <th className="px-4 py-3 font-semibold">First Name</th>
                   <th className="px-4 py-3 font-semibold">Last Name</th>
@@ -277,163 +216,118 @@ export default function Home() {
               </thead>
 
               <tbody>
-                {filteredJobs.length === 0 ? (
+                {loading ? (
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <tr key={i} className="border-b border-border">
+                      {Array.from({ length: 8 }).map((__, j) => (
+                        <td key={j} className="px-4 py-3"><Skeleton className="h-4 w-full" /></td>
+                      ))}
+                    </tr>
+                  ))
+                ) : filteredJobs.length === 0 ? (
                   <tr>
-                    <td
-                      colSpan={8}
-                      className="px-4 py-10 text-center text-sm text-muted-foreground"
-                    >
-                      No opportunities match your current filters.
+                    <td colSpan={8} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                      {error ? "Data unavailable — use the retry button above." : "No opportunities match your current filters."}
                     </td>
                   </tr>
                 ) : (
                   filteredJobs.map((job, index) => {
                     const name = displayName(job);
                     const isExpanded = expandedId === job.id;
-                    const isDraft =
-                      String(job.status || "").toLowerCase() === "draft";
+                    const isDraft = String(job.status || "").toLowerCase() === "draft";
                     const lastContactText = job.last_contacted_date || "N/A";
                     const lastMethodText = job.last_contact_method || "";
 
-                    // P1-03 fix: React.Fragment with key (not bare <>).
                     return (
                       <React.Fragment key={job.id ?? index}>
-                        <tr className="border-b border-border/40 align-top text-sm text-white transition hover:bg-white/5">
-                          <td className="px-4 py-4 font-semibold text-action">
+                        <tr className="border-b border-border align-top text-sm text-foreground transition hover:bg-muted/30">
+                          <td className="px-4 py-4 font-semibold text-primary">
                             {fallbackOpportunityId(job, index)}
                           </td>
 
                           <td className="px-4 py-4">
-                            <button
-                              onClick={() => toggleExpanded(job.id)}
-                              className="text-left font-semibold text-white transition hover:text-action"
-                            >
+                            <button onClick={() => toggleExpanded(job.id)} className="text-left font-semibold text-foreground transition hover:text-primary">
                               {name.first}
                             </button>
                           </td>
 
-                          <td className="px-4 py-4 font-semibold text-white">
-                            {name.last}
-                          </td>
+                          <td className="px-4 py-4 font-semibold text-foreground">{name.last}</td>
 
                           <td className="px-4 py-4">
-                            <span className="rounded-full border border-yellow-400/30 bg-action/10 px-2.5 py-1 text-xs font-semibold text-action">
+                            <span className="rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
                               {job.milestone || "Lead"}
                             </span>
                           </td>
 
                           <td className="px-4 py-4">
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="rounded-full border border-border/40 bg-white/5 px-2.5 py-1 text-xs font-semibold text-white">
+                              <span className="rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs font-semibold text-foreground">
                                 {job.status || job.contact_status || "New"}
                               </span>
                               {job.flags?.isAged ? (
-                                <span className="rounded-full border border-orange-400/30 bg-orange-400/10 px-2.5 py-1 text-xs font-semibold text-orange-300">
+                                <span className="rounded-full border border-orange-400/30 bg-orange-400/10 px-2.5 py-1 text-xs font-semibold text-orange-600">
                                   {job.flags.agedType || "Aged"}
                                 </span>
                               ) : job.flags?.isStale ? (
-                                <span className="rounded-full border border-yellow-400/30 bg-action/10 px-2.5 py-1 text-xs font-semibold text-yellow-300">
+                                <span className="rounded-full border border-orange-300/30 bg-orange-100 px-2.5 py-1 text-xs font-semibold text-orange-500">
                                   Stale
                                 </span>
                               ) : null}
                             </div>
                           </td>
 
-                          <td className="px-4 py-4">
+                          <td className="px-4 py-4 text-foreground">
                             <div>{lastContactText}</div>
-                            {lastMethodText ? (
-                              <div className="mt-1 text-xs text-muted-foreground">
-                                {lastMethodText}
-                              </div>
-                            ) : null}
+                            {lastMethodText ? <div className="mt-1 text-xs text-muted-foreground">{lastMethodText}</div> : null}
                           </td>
 
                           <td className="px-4 py-4">
                             <div className="flex flex-wrap gap-2">
-                              <button
-                                disabled={isDraft}
-                                onClick={() => runAction(job.id, "phone")}
-                                className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
-                                  isDraft
-                                    ? "cursor-not-allowed border-white/5 text-gray-600"
-                                    : "border-border/40 text-white hover:border-yellow-400 hover:text-action"
-                                }`}
-                              >
-                                Phone
-                              </button>
-                              <button
-                                disabled={isDraft}
-                                onClick={() => runAction(job.id, "email")}
-                                className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
-                                  isDraft
-                                    ? "cursor-not-allowed border-white/5 text-gray-600"
-                                    : "border-border/40 text-white hover:border-yellow-400 hover:text-action"
-                                }`}
-                              >
-                                Email
-                              </button>
-                              <button
-                                disabled={isDraft}
-                                onClick={() => runAction(job.id, "text")}
-                                className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
-                                  isDraft
-                                    ? "cursor-not-allowed border-white/5 text-gray-600"
-                                    : "border-border/40 text-white hover:border-yellow-400 hover:text-action"
-                                }`}
-                              >
-                                Text
-                              </button>
+                              {(["phone", "email", "text"] as const).map((type) => (
+                                <button
+                                  key={type}
+                                  disabled={isDraft}
+                                  onClick={() => runAction(job.id, type)}
+                                  className={`rounded-lg border px-3 py-2 text-xs font-semibold transition capitalize ${
+                                    isDraft
+                                      ? "cursor-not-allowed border-border text-muted-foreground opacity-40"
+                                      : "border-border text-foreground hover:border-primary hover:text-primary"
+                                  }`}
+                                >
+                                  {type === "phone" ? "Phone" : type === "email" ? "Email" : "Text"}
+                                </button>
+                              ))}
                             </div>
                           </td>
 
                           <td className="px-4 py-4">
-                            <Link
-                              href={`/opportunity/${job.id}`}
-                              className="rounded-lg bg-action px-3 py-2 text-xs font-bold text-action-foreground transition hover:bg-yellow-300"
-                            >
+                            <Link href={`/opportunity/${job.id}`} className="rounded-lg bg-electric px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:opacity-90">
                               Open
                             </Link>
                           </td>
                         </tr>
 
                         {isExpanded ? (
-                          <tr className="border-b border-border/40 bg-black/20">
+                          <tr className="border-b border-border bg-muted/20">
                             <td colSpan={8} className="px-4 py-4">
-                              <div className="rounded-xl border border-border/40 bg-muted/40 p-4">
+                              <div className="rounded-xl border border-border bg-white p-4">
                                 <div className="grid gap-3 text-sm md:grid-cols-3">
                                   <div>
-                                    <div className="mb-1 text-xs uppercase tracking-wide text-gray-500">
-                                      Email
-                                    </div>
-                                    <div className="font-semibold text-white">
-                                      {job.email || "N/A"}
-                                    </div>
+                                    <div className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">Email</div>
+                                    <div className="font-semibold text-foreground">{job.email || "N/A"}</div>
                                   </div>
                                   <div>
-                                    <div className="mb-1 text-xs uppercase tracking-wide text-gray-500">
-                                      Phone
-                                    </div>
-                                    <div className="font-semibold text-white">
-                                      {job.phone || "N/A"}
-                                    </div>
+                                    <div className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">Phone</div>
+                                    <div className="font-semibold text-foreground">{job.phone || "N/A"}</div>
                                   </div>
                                   <div>
-                                    <div className="mb-1 text-xs uppercase tracking-wide text-gray-500">
-                                      Address
-                                    </div>
-                                    <div className="font-semibold text-white">
-                                      {[
-                                        job.address,
-                                        job.city,
-                                        job.state,
-                                        job.zip_code,
-                                      ]
-                                        .filter(Boolean)
-                                        .join(", ") || "N/A"}
+                                    <div className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">Address</div>
+                                    <div className="font-semibold text-foreground">
+                                      {[job.address, job.city, job.state, job.zip_code].filter(Boolean).join(", ") || "N/A"}
                                     </div>
                                   </div>
                                 </div>
-                              </div>
+              </div>
                             </td>
                           </tr>
                         ) : null}

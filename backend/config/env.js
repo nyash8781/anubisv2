@@ -2,11 +2,18 @@ const fs = require('fs');
 const path = require('path');
 const dotenv = require('dotenv');
 
-const envFilePath = path.resolve(__dirname, '../../.env');
-const exampleFilePath = path.resolve(__dirname, '../../.env.example');
+const envFilePath = path.resolve(__dirname, '../.env');
+const exampleFilePath = path.resolve(__dirname, '../.env.example');
 
 if (fs.existsSync(envFilePath)) {
   dotenv.config({ path: envFilePath });
+} else if (process.env.NODE_ENV === 'production') {
+  // In production, every required var must be set in the deployment environment.
+  // Falling back to .env.example would silently start the server with empty
+  // credentials — users would see auth failures hours later with no clear cause.
+  console.error('[env] FATAL: backend/.env not found and NODE_ENV=production. ' +
+    'Set environment variables in your deployment dashboard (Render, Railway, etc.).');
+  process.exit(1);
 } else if (fs.existsSync(exampleFilePath)) {
   console.warn(
     '[env] WARNING: backend/.env not found — falling back to .env.example. ' +
@@ -38,6 +45,7 @@ const env = {
 
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
   anthropicModel: process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001',
+  anthropicMaxTokens: toNumber(process.env.ANTHROPIC_MAX_TOKENS, 1024),
 
   supabaseUrl: process.env.SUPABASE_URL || '',
   supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '',
@@ -56,8 +64,6 @@ const env = {
   r2AccessKey: process.env.R2_ACCESS_KEY || '',
   r2SecretKey: process.env.R2_SECRET_KEY || '',
   r2BucketName: process.env.R2_BUCKET_NAME || '',
-
-  posthogKey: process.env.NEXT_PUBLIC_POSTHOG_KEY || '',
 };
 
 const serviceRequirements = {
@@ -67,7 +73,6 @@ const serviceRequirements = {
   stripe: ['stripeSecretKey', 'stripeWebhookSecret'],
   twilio: ['twilioAccountSid', 'twilioAuthToken', 'twilioPhoneNumber'],
   r2: ['r2AccountId', 'r2AccessKey', 'r2SecretKey', 'r2BucketName'],
-  posthog: ['posthogKey'],
 };
 
 function getMissingEnvForService(serviceName) {
@@ -99,8 +104,7 @@ function getServiceStatus() {
     stripe: isServiceConfigured('stripe'),
     twilio: isServiceConfigured('twilio'),
     r2: isServiceConfigured('r2'),
-    posthog: isServiceConfigured('posthog'),
-  };
+    };
 }
 
 module.exports = {

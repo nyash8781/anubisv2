@@ -23,6 +23,7 @@ dist/
 .env.production.local
 backend/.env
 frontend/.env.local
+docs/
 
 # IDE / OS
 .DS_Store

@@ -1,14 +1,9 @@
-/**
- * zod schemas + validate middleware.
- *
- * Every POST/PUT endpoint wraps its handler with validate(schema) so we
- * never accept unvalidated input from the client. Fixes P2-04.
- */
-
 const { z } = require('zod');
 
-// Flexible text field — accepts empty strings.
 const text = z.string().trim().default('');
+
+// Numeric string — allows digits, optional decimal, rejects letters.
+const numericText = z.string().regex(/^\d*\.?\d*$/, 'Must be a number').optional();
 
 const jobUpsertSchema = z.object({
   customer_name: text.optional(),
@@ -25,10 +20,10 @@ const jobUpsertSchema = z.object({
   zip_code: text.optional(),
   service: text.optional(),
   scope_of_work: text.optional(),
-  price: z.union([z.string(), z.number()]).optional(),
-  bid: z.union([z.string(), z.number()]).optional(),
-  payments_received: z.union([z.string(), z.number()]).optional(),
-  balance_due: z.union([z.string(), z.number()]).optional(),
+  price: numericText,
+  bid: numericText,
+  payments_received: numericText,
+  balance_due: numericText,
   due_date: text.optional(),
   notes: text.optional(),
   milestone: z
@@ -46,15 +41,20 @@ const actionSchema = z.object({
   type: z.enum(['call', 'text', 'email', 'manual', 'completed']),
 });
 
+// Only the fields the AI endpoint actually uses — no passthrough, no client-supplied prompts.
 const generateInsightsSchema = z.object({
   service: text.optional(),
   scope_of_work: text.optional(),
   customer_name: text.optional(),
   first_name: text.optional(),
   last_name: text.optional(),
-  system_prompt: text.optional(),
-  business_context: text.optional(),
-}).passthrough(); // allow the rest of the job payload through — the endpoint only uses a subset
+});
+
+const settingsSchema = z.object({
+  base_prompt: z.string().trim().default(''),
+  business_context: z.string().trim().default(''),
+  extra: z.record(z.unknown()).optional(),
+});
 
 function validate(schema) {
   return (req, res, next) => {
@@ -74,5 +74,6 @@ module.exports = {
   jobUpsertSchema,
   actionSchema,
   generateInsightsSchema,
+  settingsSchema,
   validate,
 };

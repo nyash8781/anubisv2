@@ -2,57 +2,43 @@
 @tailwind components;
 @tailwind utilities;
 
-/*
- * Anubis-Alpha — Unified design tokens
- *
- * Merge decision:
- *   - Base palette + radii come from Anubis_UI (premium neutrals + mint primary)
- *   - "Action yellow" preserved as a dedicated token for the contractor
- *     dashboard's functional call-to-action buttons (Save, Generate AI, etc.)
- *     This keeps field-worker muscle memory intact while giving marketing
- *     pages a premium, unified feel.
- *
- *   - --primary (mint)  → marketing CTAs, branded highlights, premium feel
- *   - --action (yellow) → contractor workflow CTAs — "the thing you came here to click"
- *   - --card (dark)     → proper card contrast on the dark background
- */
-
 @layer base {
   :root {
     /* Surfaces */
-    --background: 210 11% 7%;          /* #0f1114 — near-black */
-    --foreground: 160 14% 93%;         /* #eaf1ee — off-white */
+    --background: 220 27% 98%;          /* #FAFAFA warm off-white */
+    --foreground: 220 13% 18%;          /* near-black text */
 
-    --card: 220 13% 11%;               /* #171a1f — elevated surface */
-    --card-foreground: 160 14% 93%;
+    --card: 0 0% 100%;                  /* pure white cards */
+    --card-foreground: 220 13% 18%;
 
-    --popover: 220 13% 11%;
-    --popover-foreground: 160 14% 93%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 13% 18%;
 
-    /* Brand — mint/teal (Anubis_UI) */
-    --primary: 165 96% 71%;            /* #7afcd6 */
-    --primary-foreground: 160 8% 6%;
+    /* Electric Blue — single accent system */
+    --primary: 217 100% 50%;            /* #0052FF */
+    --primary-light: 217 100% 65%;      /* #4D7CFF */
+    --primary-foreground: 0 0% 100%;    /* white text on blue */
 
-    /* Secondary / muted */
-    --secondary: 220 10% 18%;
-    --secondary-foreground: 160 14% 93%;
+    /* --action aliased to primary for backward compatibility */
+    --action: 217 100% 50%;
+    --action-foreground: 0 0% 100%;
 
-    --muted: 220 10% 16%;
-    --muted-foreground: 220 5% 65%;
+    /* Supporting */
+    --secondary: 220 14% 94%;
+    --secondary-foreground: 220 13% 18%;
 
-    --accent: 220 10% 18%;
-    --accent-foreground: 160 14% 93%;
+    --muted: 220 14% 94%;
+    --muted-foreground: 220 9% 55%;
+
+    --accent: 217 100% 96%;             /* very light blue tint for hover states */
+    --accent-foreground: 217 100% 38%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 220 8% 18%;
-    --input: 220 8% 18%;
-    --ring: 165 96% 71%;
-
-    /* Action yellow — preserved from AnubisV2 for contractor workflow CTAs */
-    --action: 48 96% 53%;              /* ≈ yellow-400 */
-    --action-foreground: 0 0% 7%;      /* near-black */
+    --border: 220 13% 88%;
+    --input: 220 13% 88%;
+    --ring: 217 100% 50%;
 
     --radius: 0.75rem;
   }
@@ -77,7 +63,6 @@
   }
 }
 
-/* Subtle scrollbar for dark surfaces */
 @layer utilities {
   .scrollbar-thin {
     scrollbar-width: thin;
