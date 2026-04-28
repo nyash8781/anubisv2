@@ -1,10 +1,12 @@
 'use client'
 
-import { useEffect } from 'react'
+export const dynamic = 'force-dynamic'
+
+import { Suspense, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-export default function AuthCallbackPage() {
+function AuthCallbackInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -12,7 +14,6 @@ export default function AuthCallbackPage() {
     const code = searchParams.get('code')
 
     if (code) {
-      // PKCE flow: exchange the one-time code for a session
       supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
         if (error) {
           router.replace('/login?error=auth_failed')
@@ -21,7 +22,6 @@ export default function AuthCallbackPage() {
         }
       })
     } else {
-      // Implicit flow: detectSessionInUrl already stored the session from the hash
       supabase.auth.getSession().then(({ data: { session } }) => {
         if (session) {
           router.replace('/dashboard')
@@ -36,5 +36,19 @@ export default function AuthCallbackPage() {
     <div className="flex min-h-screen items-center justify-center">
       <p className="text-sm text-muted-foreground">Signing you in…</p>
     </div>
+  )
+}
+
+export default function AuthCallbackPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center">
+          <p className="text-sm text-muted-foreground">Signing you in…</p>
+        </div>
+      }
+    >
+      <AuthCallbackInner />
+    </Suspense>
   )
 }
