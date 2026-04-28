@@ -13,7 +13,7 @@ if (!process.env.NEXT_PUBLIC_API_URL) {
   )
 }
 
-export const API_BASE: string = process.env.NEXT_PUBLIC_API_URL
+export const API_BASE: string = process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, '')
 
 async function authHeaders(): Promise<Record<string, string>> {
   const {
