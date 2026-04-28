@@ -185,6 +185,8 @@
   },
   "active": "771aad598c9e37bd",
   "lastOpenFiles": [
+    "node_modules/rxjs/dist/cjs/internal/operators/timeout.js",
+    "node_modules/rxjs/dist/cjs/internal/observable/throwError.js",
     "backend/vercel.json",
     "docs/ENTERPRISE_COUNCIL_REPORT.md",
     "frontend/instrumentation.ts",
@@ -195,8 +197,6 @@
     "backend/node_modules/@opentelemetry/instrumentation-amqplib/build/src/version.d.ts",
     "backend/node_modules/@opentelemetry/instrumentation-amqplib/build/src/utils.js.map",
     "backend/node_modules/@opentelemetry/instrumentation-amqplib/build/src/version.js",
-    "backend/node_modules/@opentelemetry/instrumentation-amqplib/build/src/utils.d.ts",
-    "backend/node_modules/@opentelemetry/instrumentation-amqplib/build/src/types.js.map",
     "backend/node_modules/module-details-from-path/README.md",
     "frontend/node_modules/@prisma/instrumentation/node_modules/@opentelemetry/instrumentation/README.md",
     "frontend/node_modules/@prisma/instrumentation/node_modules/@opentelemetry/api-logs/README.md",

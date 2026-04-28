@@ -8,12 +8,9 @@ const exampleFilePath = path.resolve(__dirname, '../.env.example');
 if (fs.existsSync(envFilePath)) {
   dotenv.config({ path: envFilePath });
 } else if (process.env.NODE_ENV === 'production') {
-  // In production, every required var must be set in the deployment environment.
-  // Falling back to .env.example would silently start the server with empty
-  // credentials — users would see auth failures hours later with no clear cause.
-  console.error('[env] FATAL: backend/.env not found and NODE_ENV=production. ' +
-    'Set environment variables in your deployment dashboard (Render, Railway, etc.).');
-  process.exit(1);
+  // Production platforms (Vercel, Render, Railway) inject env vars directly into
+  // process.env — no .env file is present or needed. Just continue.
+  console.log('[env] No .env file found — using platform-injected environment variables.');
 } else if (fs.existsSync(exampleFilePath)) {
   console.warn(
     '[env] WARNING: backend/.env not found — falling back to .env.example. ' +
