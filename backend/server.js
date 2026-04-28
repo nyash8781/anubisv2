@@ -33,6 +33,10 @@ app.use(
     origin(origin, callback) {
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin)) return callback(null, true);
+      // Allow all Vercel preview deployments for this project.
+      if (origin && /https:\/\/anubisv2[a-z0-9-]*\.vercel\.app$/.test(origin)) {
+        return callback(null, true);
+      }
       return callback(new Error(`Origin not allowed: ${origin}`));
     },
     credentials: true,
