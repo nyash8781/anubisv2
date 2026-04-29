@@ -30,9 +30,10 @@ function forUser(userId) {
     },
 
     async createJob(jobData) {
+      const { flags, id: _id, user_id: _uid, ...insertData } = jobData;
       const { data, error } = await _client
         .from(TABLE)
-        .insert({ ...jobData, user_id: userId })
+        .insert({ ...insertData, user_id: userId })
         .select()
         .single();
       if (error) throw new Error(`[db/supabase] createJob: ${error.message}`);
