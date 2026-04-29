@@ -13,10 +13,9 @@ function getClient() {
 
 async function generate(userMessage, systemMessage = null) {
   if (!env.anthropicApiKey) {
-    throw new Error(
-      'ANTHROPIC_API_KEY is not set — cannot generate AI response. ' +
-      'Add it to backend/.env or the deployed environment.'
-    );
+    const err = new Error('ANTHROPIC_API_KEY is not configured on this server.');
+    err.status = 503;
+    throw err;
   }
 
   const client = getClient();

@@ -65,6 +65,16 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
+app.get('/health/ai', (req, res) => {
+  const hasKey = !!env.anthropicApiKey;
+  const model = env.anthropicModel;
+  res.status(hasKey ? 200 : 503).json({
+    configured: hasKey,
+    model,
+    ...(hasKey ? {} : { error: 'ANTHROPIC_API_KEY is not set in environment variables.' }),
+  });
+});
+
 // --- Feature routes ---------------------------------------------------------
 app.use('/jobs', jobsRouter);
 app.use('/', aiRouter);
