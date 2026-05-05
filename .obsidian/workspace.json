@@ -185,6 +185,7 @@
   },
   "active": "771aad598c9e37bd",
   "lastOpenFiles": [
+    "backend/seed-fake-opportunities.js",
     "backend/node_modules/colorette/index.cjs",
     "backend/node_modules/colorette/package.json",
     "backend/node_modules/pino-pretty/index.js",
@@ -195,7 +196,6 @@
     "backend/node_modules/@prisma/instrumentation/node_modules/import-in-the-middle/index.js",
     "backend/node_modules/@prisma/instrumentation/node_modules/import-in-the-middle/package.json",
     "backend/node_modules/@prisma/instrumentation/package.json",
-    "backend/node_modules/@opentelemetry/instrumentation-pg/package.json",
     "frontend/node_modules/path-scurry/node_modules/lru-cache/README.md",
     "frontend/node_modules/path-scurry/node_modules/lru-cache/LICENSE.md",
     "frontend/node_modules/path-scurry/README.md",
