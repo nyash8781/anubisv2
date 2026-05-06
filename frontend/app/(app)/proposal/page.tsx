@@ -1,288 +1,316 @@
 'use client'
 
-import { useState } from 'react'
-import { Plus, Printer, Trash2 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { useState, useEffect, useMemo } from 'react'
+import { Skeleton } from '@/components/ui/skeleton'
+import { apiGet } from '@/lib/api'
+import { ProposalStatusBar } from '@/components/proposal/ProposalStatusBar'
+import { AIAssistantHubCard } from '@/components/proposal/AIAssistantHubCard'
+import { ScopeOfWorkCard } from '@/components/proposal/ScopeOfWorkCard'
+import { BillOfMaterialsCard } from '@/components/proposal/BillOfMaterialsCard'
+import { PricingSummaryCard } from '@/components/proposal/PricingSummaryCard'
+import { DocumentsCard } from '@/components/proposal/DocumentsCard'
+import { ProposalPreviewModal } from '@/components/proposal/ProposalPreviewModal'
+import {
+  loadProposal,
+  saveProposal,
+} from '@/lib/services/proposalService'
+import {
+  loadBOMItems,
+  saveBOMItems,
+  createDefaultBOMItem,
+} from '@/lib/services/bomService'
+import { loadDocuments, saveDocuments } from '@/lib/services/proposalDocumentService'
+import {
+  mergeProposalSettings,
+  DEFAULT_PROPOSAL_SETTINGS,
+} from '@/lib/services/proposalSettingsService'
+import { calculatePricing, recalcItem } from '@/lib/services/pricingService'
+import type {
+  Proposal,
+  BOMItem,
+  BOMItemCategory,
+  ProposalDocument,
+  ContractorProposalSettings,
+  AIProposalAction,
+} from '@/types/proposal'
 
-type LineItem = {
-  id: number
-  description: string
-  qty: number
-  unitPrice: number
+// ─────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────
+
+function parseAIListItems(output: string): string[] {
+  return output
+    .split('\n')
+    .map((l) =>
+      l
+        .replace(/^[\d]+[\.\)]\s*/, '')
+        .replace(/^[•\-\*]\s*/, '')
+        .trim()
+    )
+    .filter((l) => l.length > 3 && !l.startsWith('[AI') && !l.toLowerCase().startsWith('note:'))
 }
 
-function fmt(n: number) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-  }).format(n)
+function parseAIBOMOutput(output: string, offset: number): BOMItem[] {
+  const lines = output.split('\n').filter((l) => l.trim())
+  const items: BOMItem[] = []
+
+  for (const line of lines) {
+    const stripped = line
+      .replace(/^[\d]+[\.\)]\s*/, '')
+      .replace(/^[•\-\*]\s*/, '')
+      .trim()
+
+    if (!stripped || stripped.startsWith('[') || stripped.length < 3) continue
+
+    // Try to parse: "Item name — Category — $1,234" or "Item name"
+    const parts = stripped.split(/\s*—\s*/)
+    const rawName = parts[0]?.replace(/\([^)]+\)/, '').trim() || ''
+    const categoryStr = (parts[1] || '').toLowerCase().trim()
+    const costStr = (parts[2] || '').replace(/[^0-9.]/g, '') || '0'
+
+    if (!rawName || rawName.length < 2) continue
+
+    const CATS = [
+      'material', 'equipment', 'labor', 'subcontractor',
+      'permit', 'design', 'travel', 'fee', 'allowance', 'other',
+    ]
+    const category: BOMItemCategory = CATS.includes(categoryStr)
+      ? (categoryStr as BOMItemCategory)
+      : 'material'
+
+    const unitCost = parseFloat(costStr) || 0
+
+    const draft = createDefaultBOMItem(offset + items.length)
+    const item = recalcItem({
+      ...draft,
+      itemName: rawName,
+      category,
+      unitCost,
+      source: 'ai_generated',
+      confidence: 'low',
+    })
+    items.push(item)
+  }
+
+  return items
 }
 
-let _id = 1
-const newItem = (): LineItem => ({
-  id: _id++,
-  description: '',
-  qty: 1,
-  unitPrice: 0,
-})
-
-const INPUT =
-  'h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-ring'
-
-function Field({
-  label,
-  className,
-  children,
-}: {
-  label: string
-  className?: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className={className}>
-      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {label}
-      </label>
-      {children}
-    </div>
-  )
-}
+// ─────────────────────────────────────────────
+// Page
+// ─────────────────────────────────────────────
 
 export default function ProposalPage() {
-  const [title, setTitle] = useState('')
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
-  const [clientName, setClientName] = useState('')
-  const [clientEmail, setClientEmail] = useState('')
-  const [clientAddress, setClientAddress] = useState('')
-  const [items, setItems] = useState<LineItem[]>([newItem()])
-  const [taxRate, setTaxRate] = useState(0)
-  const [notes, setNotes] = useState('')
-  const [terms, setTerms] = useState(
-    'Payment due within 30 days of invoice. A deposit is required before work begins.',
+  const [proposal, setProposal] = useState<Proposal | null>(null)
+  const [bomItems, setBomItems] = useState<BOMItem[]>([])
+  const [documents, setDocuments] = useState<ProposalDocument[]>([])
+  const [proposalSettings, setProposalSettings] =
+    useState<ContractorProposalSettings>(DEFAULT_PROPOSAL_SETTINGS)
+  const [showPreview, setShowPreview] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+
+  // Compute pricing live from BOM + proposal tax/discount settings
+  const pricing = useMemo(
+    () =>
+      calculatePricing(
+        bomItems,
+        proposal?.taxRate ?? 0,
+        proposal?.discountAmount ?? 0,
+        proposal?.taxEnabled ?? false
+      ),
+    [bomItems, proposal?.taxRate, proposal?.discountAmount, proposal?.taxEnabled]
   )
 
-  const add = () => setItems((p) => [...p, newItem()])
-  const remove = (id: number) => setItems((p) => p.filter((i) => i.id !== id))
-  const update = (id: number, field: keyof LineItem, val: string | number) =>
-    setItems((p) => p.map((i) => (i.id === id ? { ...i, [field]: val } : i)))
+  // ── Load on mount ──────────────────────────
+  useEffect(() => {
+    async function load() {
+      try {
+        const p = await loadProposal()
+        setProposal(p)
 
-  const subtotal = items.reduce((s, i) => s + i.qty * i.unitPrice, 0)
-  const tax = subtotal * (taxRate / 100)
-  const total = subtotal + tax
+        const [items, docs] = await Promise.all([
+          loadBOMItems(p.id),
+          loadDocuments(p.id),
+        ])
+        setBomItems(items)
+        setDocuments(docs)
+      } catch {
+        // Graceful fallback — loadProposal always returns a default
+      }
+
+      // Load proposal settings from the backend settings API (stored in extra JSONB)
+      try {
+        const remote = await apiGet<{ extra?: Record<string, unknown> }>('/settings')
+        const ps = mergeProposalSettings(
+          remote.extra?.proposal_settings as ContractorProposalSettings | undefined
+        )
+        setProposalSettings(ps)
+      } catch {
+        // Settings unavailable — use defaults, no crash
+      }
+
+      setLoaded(true)
+    }
+    load()
+  }, [])
+
+  // ── Handlers ──────────────────────────────
+  function updateProposal(updates: Partial<Proposal>) {
+    setProposal((prev) =>
+      prev ? { ...prev, ...updates, updatedAt: new Date().toISOString() } : prev
+    )
+  }
+
+  function handleAIApply(
+    target: 'scope' | 'assumptions' | 'exclusions' | 'bom',
+    content: string
+  ) {
+    if (!proposal) return
+
+    if (target === 'scope') {
+      updateProposal({
+        scopeOfWork: proposal.scopeOfWork
+          ? `${proposal.scopeOfWork}\n\n${content}`
+          : content,
+      })
+    } else if (target === 'assumptions') {
+      const newItems = parseAIListItems(content)
+      updateProposal({ assumptions: [...proposal.assumptions, ...newItems] })
+    } else if (target === 'exclusions') {
+      const newItems = parseAIListItems(content)
+      updateProposal({ exclusions: [...proposal.exclusions, ...newItems] })
+    } else if (target === 'bom') {
+      const newItems = parseAIBOMOutput(content, bomItems.length)
+      if (newItems.length > 0) {
+        setBomItems((prev) => [...prev, ...newItems])
+      }
+    }
+  }
+
+  function handleRequestAI(_action: AIProposalAction) {
+    // The AI hub manages its own selected action state.
+    // This hook exists for the ScopeOfWorkCard quick-action buttons
+    // to scroll/focus the AI hub — currently a no-op stub.
+    // TODO: implement scroll-to-AI-hub + pre-select action
+  }
+
+  async function handleSave() {
+    if (!proposal) return
+    setSaving(true)
+    try {
+      const saved = await saveProposal(proposal)
+      setProposal(saved)
+      await Promise.all([
+        saveBOMItems(bomItems, saved.id),
+        saveDocuments(documents, saved.id),
+      ])
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function handleMarkReady() {
+    updateProposal({ status: 'ready' })
+    setShowPreview(false)
+  }
+
+  // ── Render ────────────────────────────────
+  if (!loaded) {
+    return (
+      <main className="min-h-screen bg-background p-6">
+        <div className="mx-auto max-w-5xl space-y-3">
+          <Skeleton className="h-24 w-full rounded-2xl" />
+          <Skeleton className="h-14 w-full rounded-2xl" />
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-16 w-full rounded-2xl" />
+          ))}
+        </div>
+      </main>
+    )
+  }
+
+  if (!proposal) return null
 
   return (
-    <main className="min-h-screen bg-background text-white">
-      <div className="mx-auto max-w-5xl space-y-6 px-6 py-6">
-        {/* Header */}
+    <main className="min-h-screen bg-background">
+      <div className="mx-auto max-w-5xl space-y-4 px-4 py-6 pb-16">
+
+        {/* ── Page header ── */}
         <section className="rounded-2xl border border-border/40 bg-card p-5">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="text-xs font-bold uppercase tracking-[0.2em] text-action">
+              <div className="text-xs font-bold uppercase tracking-[0.2em] text-primary">
                 Proposals
               </div>
-              <h1 className="mt-1 text-3xl font-bold">Proposal Builder</h1>
+              <h1 className="mt-1 font-display text-3xl font-bold text-foreground">
+                Proposal Workspace
+              </h1>
               <p className="mt-1 text-sm text-muted-foreground">
-                Fill in the details below, then print or save as PDF.
+                Build, price, refine, and package the job
               </p>
             </div>
-            <Button onClick={() => window.print()} className="shrink-0 gap-2">
-              <Printer className="h-4 w-4" />
-              Print / PDF
-            </Button>
           </div>
         </section>
 
-        {/* Proposal info */}
-        <section className="rounded-2xl border border-border/40 bg-card p-5">
-          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Proposal Info
-          </h2>
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Proposal Title" className="md:col-span-2">
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. Deck Replacement — Smith Residence"
-                className={INPUT}
-              />
-            </Field>
-            <Field label="Date">
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className={INPUT}
-              />
-            </Field>
-            <Field label="Client Name">
-              <input
-                value={clientName}
-                onChange={(e) => setClientName(e.target.value)}
-                placeholder="John Smith"
-                className={INPUT}
-              />
-            </Field>
-            <Field label="Client Email">
-              <input
-                type="email"
-                value={clientEmail}
-                onChange={(e) => setClientEmail(e.target.value)}
-                placeholder="john@email.com"
-                className={INPUT}
-              />
-            </Field>
-            <Field label="Client Address">
-              <input
-                value={clientAddress}
-                onChange={(e) => setClientAddress(e.target.value)}
-                placeholder="123 Main St, City, State 00000"
-                className={INPUT}
-              />
-            </Field>
-          </div>
-        </section>
+        {/* ── Status bar ── */}
+        <ProposalStatusBar
+          proposal={proposal}
+          documents={documents}
+          pricing={pricing}
+          onPreview={() => setShowPreview(true)}
+          onSave={handleSave}
+          saving={saving}
+        />
 
-        {/* Line items */}
-        <section className="rounded-2xl border border-border/40 bg-card p-5">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Line Items
-            </h2>
-            <Button variant="outline" size="sm" onClick={add} className="gap-2">
-              <Plus className="h-3.5 w-3.5" />
-              Add Item
-            </Button>
-          </div>
+        {/* ── AI Assistant Hub ── */}
+        <AIAssistantHubCard
+          proposal={proposal}
+          bomItems={bomItems}
+          proposalSettings={proposalSettings}
+          onApply={handleAIApply}
+        />
 
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead>
-                <tr className="border-b border-border/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="pb-3 pr-4 font-semibold">Description</th>
-                  <th className="pb-3 pr-4 text-right font-semibold">Qty</th>
-                  <th className="pb-3 pr-4 text-right font-semibold">
-                    Unit Price
-                  </th>
-                  <th className="pb-3 pr-4 text-right font-semibold">Total</th>
-                  <th className="pb-3" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/40">
-                {items.map((item) => (
-                  <tr key={item.id}>
-                    <td className="py-3 pr-4">
-                      <input
-                        value={item.description}
-                        onChange={(e) =>
-                          update(item.id, 'description', e.target.value)
-                        }
-                        placeholder="Service or material description"
-                        className={INPUT}
-                      />
-                    </td>
-                    <td className="py-3 pr-4">
-                      <input
-                        type="number"
-                        min="1"
-                        value={item.qty}
-                        onChange={(e) =>
-                          update(item.id, 'qty', Number(e.target.value))
-                        }
-                        className={`${INPUT} w-20 text-right`}
-                      />
-                    </td>
-                    <td className="py-3 pr-4">
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={item.unitPrice}
-                        onChange={(e) =>
-                          update(item.id, 'unitPrice', Number(e.target.value))
-                        }
-                        className={`${INPUT} w-28 text-right`}
-                      />
-                    </td>
-                    <td className="py-3 pr-4 text-right font-semibold text-action">
-                      {fmt(item.qty * item.unitPrice)}
-                    </td>
-                    <td className="py-3">
-                      <button
-                        onClick={() => remove(item.id)}
-                        disabled={items.length === 1}
-                        className="rounded-md p-1 text-muted-foreground transition hover:text-destructive disabled:opacity-30"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        {/* ── Scope of Work ── */}
+        <ScopeOfWorkCard
+          proposal={proposal}
+          onChange={updateProposal}
+          onRequestAI={handleRequestAI}
+        />
 
-          {/* Totals */}
-          <div className="mt-5 flex justify-end">
-            <div className="w-64 space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Subtotal</span>
-                <span className="font-semibold">{fmt(subtotal)}</span>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">Tax (%)</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  value={taxRate}
-                  onChange={(e) => setTaxRate(Number(e.target.value))}
-                  className={`${INPUT} w-20 text-right`}
-                />
-              </div>
-              {taxRate > 0 && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Tax</span>
-                  <span className="font-semibold">{fmt(tax)}</span>
-                </div>
-              )}
-              <div className="flex justify-between border-t border-border/40 pt-2">
-                <span className="font-bold">Total</span>
-                <span className="text-lg font-bold text-action">
-                  {fmt(total)}
-                </span>
-              </div>
-            </div>
-          </div>
-        </section>
+        {/* ── Bill of Materials ── */}
+        <BillOfMaterialsCard
+          items={bomItems}
+          onChange={setBomItems}
+          onRequestAI={() => handleRequestAI('generate_bom')}
+        />
 
-        {/* Notes */}
-        <section className="rounded-2xl border border-border/40 bg-card p-5">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Notes
-          </h2>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Scope of work, inclusions/exclusions, estimated timeline…"
-            rows={4}
-            className={`${INPUT} h-auto resize-none py-2`}
-          />
-        </section>
+        {/* ── Pricing Summary ── */}
+        <PricingSummaryCard
+          items={bomItems}
+          proposal={proposal}
+          proposalSettings={proposalSettings}
+          onChange={updateProposal}
+        />
 
-        {/* Terms */}
-        <section className="rounded-2xl border border-border/40 bg-card p-5">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Terms &amp; Conditions
-          </h2>
-          <textarea
-            value={terms}
-            onChange={(e) => setTerms(e.target.value)}
-            rows={3}
-            className={`${INPUT} h-auto resize-none py-2`}
-          />
-        </section>
+        {/* ── Documents ── */}
+        <DocumentsCard
+          documents={documents}
+          onChange={setDocuments}
+          proposalId={proposal.id}
+        />
+
       </div>
+
+      {/* ── Proposal Preview Modal ── */}
+      <ProposalPreviewModal
+        open={showPreview}
+        onClose={() => setShowPreview(false)}
+        proposal={proposal}
+        bomItems={bomItems}
+        proposalSettings={proposalSettings}
+        pricing={pricing}
+        onMarkReady={handleMarkReady}
+      />
     </main>
   )
 }

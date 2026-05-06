@@ -1,9 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp, AlertCircle, RefreshCw } from "lucide-react";
+import { ChevronDown, ChevronUp, AlertCircle, RefreshCw, Plus, Trash2 } from "lucide-react";
 import { apiGet, apiPut } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
+import { mergeProposalSettings, DEFAULT_PROPOSAL_SETTINGS } from "@/lib/services/proposalSettingsService";
+import type {
+  ContractorProposalSettings,
+  PaymentTerm,
+} from "@/types/proposal";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -59,6 +64,8 @@ type Settings = {
   auto_mark_contacted_call: boolean;
   allow_draft_contact_actions: boolean;
   opportunity_id_format: string;
+  // Proposal settings — stored as nested object in extra JSONB
+  proposal_settings: ContractorProposalSettings;
 };
 
 const defaults: Settings = {
@@ -112,6 +119,7 @@ const defaults: Settings = {
   auto_mark_contacted_call: true,
   allow_draft_contact_actions: false,
   opportunity_id_format: "YYMMDDXXXX",
+  proposal_settings: DEFAULT_PROPOSAL_SETTINGS,
 };
 
 // ---------------------------------------------------------------------------
@@ -199,6 +207,108 @@ function Full({ children }: { children: React.ReactNode }) {
 }
 
 // ---------------------------------------------------------------------------
+// Payment Terms Editor (used inside Proposal Settings)
+// ---------------------------------------------------------------------------
+function PaymentTermsEditor({
+  terms,
+  onChange,
+}: {
+  terms: PaymentTerm[];
+  onChange: (terms: PaymentTerm[]) => void;
+}) {
+  function updateTerm(id: string, field: keyof PaymentTerm, value: string | number) {
+    onChange(terms.map((t) => (t.id === id ? { ...t, [field]: value } : t)));
+  }
+
+  function addTerm() {
+    const newTerm: PaymentTerm = {
+      id: crypto.randomUUID(),
+      label: "New Term",
+      percentage: 0,
+      description: "",
+      dueTrigger: "",
+    };
+    onChange([...terms, newTerm]);
+  }
+
+  function removeTerm(id: string) {
+    onChange(terms.filter((t) => t.id !== id));
+  }
+
+  const totalPct = terms.reduce((s, t) => s + (Number(t.percentage) || 0), 0);
+
+  return (
+    <div className="sm:col-span-2 space-y-3">
+      <div className="flex items-center justify-between">
+        <label className="block text-sm font-medium text-foreground">Payment Terms</label>
+        <span className={`text-xs font-semibold ${totalPct === 100 ? "text-green-600" : "text-amber-600"}`}>
+          Total: {totalPct}%{totalPct !== 100 && " (should equal 100%)"}
+        </span>
+      </div>
+      <div className="space-y-2">
+        {terms.map((term) => (
+          <div key={term.id} className="grid grid-cols-[1fr_60px_1fr_1fr_32px] gap-2 items-start rounded-xl border border-border/40 bg-background p-3">
+            <div className="space-y-0.5">
+              <label className="text-xs text-muted-foreground">Label</label>
+              <input
+                value={term.label}
+                onChange={(e) => updateTerm(term.id, "label", e.target.value)}
+                className="h-8 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none focus:border-primary"
+              />
+            </div>
+            <div className="space-y-0.5">
+              <label className="text-xs text-muted-foreground">%</label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={term.percentage}
+                onChange={(e) => updateTerm(term.id, "percentage", Number(e.target.value))}
+                className="h-8 w-full rounded-lg border border-input bg-background px-2 text-right text-sm outline-none focus:border-primary"
+              />
+            </div>
+            <div className="space-y-0.5">
+              <label className="text-xs text-muted-foreground">Description</label>
+              <input
+                value={term.description}
+                onChange={(e) => updateTerm(term.id, "description", e.target.value)}
+                placeholder="e.g. Before work begins"
+                className="h-8 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none focus:border-primary"
+              />
+            </div>
+            <div className="space-y-0.5">
+              <label className="text-xs text-muted-foreground">Due Trigger</label>
+              <input
+                value={term.dueTrigger}
+                onChange={(e) => updateTerm(term.id, "dueTrigger", e.target.value)}
+                placeholder="e.g. Before work begins"
+                className="h-8 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none focus:border-primary"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => removeTerm(term.id)}
+              disabled={terms.length <= 1}
+              className="mt-5 rounded p-1 text-muted-foreground transition hover:text-destructive disabled:opacity-30"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={addTerm}
+        className="flex items-center gap-1.5 rounded-lg border border-border/40 px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-primary"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        Add Term
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 export default function SettingsPage() {
@@ -214,11 +324,16 @@ export default function SettingsPage() {
     setLoading(true);
     apiGet<{ base_prompt: string; business_context: string; extra?: Record<string, unknown> }>("/settings")
       .then((remote) => {
+        const rawExtra = remote.extra || {};
+        const proposalSettings = mergeProposalSettings(
+          rawExtra.proposal_settings as ContractorProposalSettings | undefined
+        );
         setS({
           ...defaults,
           base_prompt: remote.base_prompt || defaults.base_prompt,
           business_context: remote.business_context || defaults.business_context,
-          ...(remote.extra || {}),
+          ...rawExtra,
+          proposal_settings: proposalSettings,
         } as Settings);
       })
       .catch(() => setLoadError(true))
@@ -232,8 +347,17 @@ export default function SettingsPage() {
     setDirty(true);
   }
 
+  // Helper for updating nested proposal_settings sub-objects
+  function updPS<K extends keyof ContractorProposalSettings>(
+    key: K,
+    value: ContractorProposalSettings[K]
+  ) {
+    upd("proposal_settings", { ...s.proposal_settings, [key]: value });
+  }
+
   const str = (key: keyof Settings) => (s[key] as string) ?? "";
   const bool = (key: keyof Settings) => (s[key] as boolean) ?? false;
+  const ps = s.proposal_settings;
 
   async function save() {
     setSaving(true);
@@ -394,6 +518,282 @@ export default function SettingsPage() {
                 <Toggle label="Allow Contact Actions on Draft Opportunities" checked={bool("allow_draft_contact_actions")} onChange={(v) => upd("allow_draft_contact_actions", v)} />
               </div>
             </Full>
+          </Section>
+
+          {/* ═══════════════════════════════════════════════
+              PROPOSAL SETTINGS
+          ═══════════════════════════════════════════════ */}
+          <div className="pt-4">
+            <div className="mb-3 flex items-center gap-3">
+              <div className="h-px flex-1 bg-border" />
+              <span className="text-xs font-bold uppercase tracking-widest text-primary">
+                Proposal Settings
+              </span>
+              <div className="h-px flex-1 bg-border" />
+            </div>
+            <p className="mb-3 text-xs text-muted-foreground text-center">
+              These settings control how proposals are built, branded, and presented to clients.
+            </p>
+          </div>
+
+          {/* ── Proposal — Business Profile ── */}
+          <Section title="Proposal — Business Profile" description="Company info that auto-populates proposals. Keep in sync with Business Identity above.">
+            <Full>
+              <TextInput
+                label="Company Name"
+                hint="Shown at the top of every proposal"
+                value={ps.businessProfile.companyName}
+                onChange={(v) => updPS("businessProfile", { ...ps.businessProfile, companyName: v })}
+                placeholder="Apex Roofing & Construction"
+              />
+            </Full>
+            <TextInput
+              label="Contact Name"
+              value={ps.businessProfile.contactName}
+              onChange={(v) => updPS("businessProfile", { ...ps.businessProfile, contactName: v })}
+              placeholder="John Smith"
+            />
+            <TextInput
+              label="Email"
+              type="email"
+              value={ps.businessProfile.email}
+              onChange={(v) => updPS("businessProfile", { ...ps.businessProfile, email: v })}
+              placeholder="info@apexroofing.com"
+            />
+            <TextInput
+              label="Phone"
+              type="tel"
+              value={ps.businessProfile.phone}
+              onChange={(v) => updPS("businessProfile", { ...ps.businessProfile, phone: v })}
+              placeholder="(602) 555-0100"
+            />
+            <TextInput
+              label="Website"
+              value={ps.businessProfile.website}
+              onChange={(v) => updPS("businessProfile", { ...ps.businessProfile, website: v })}
+              placeholder="https://apexroofing.com"
+            />
+            <TextInput
+              label="License Number"
+              value={ps.businessProfile.licenseNumber}
+              onChange={(v) => updPS("businessProfile", { ...ps.businessProfile, licenseNumber: v })}
+              placeholder="ROC-123456"
+            />
+            <Full>
+              <TextInput
+                label="Business Address"
+                value={ps.businessProfile.businessAddress}
+                onChange={(v) => updPS("businessProfile", { ...ps.businessProfile, businessAddress: v })}
+                placeholder="123 Main St, Phoenix, AZ 85001"
+              />
+            </Full>
+            <Full>
+              <TextInput
+                label="Insurance Info"
+                value={ps.businessProfile.insuranceInfo}
+                onChange={(v) => updPS("businessProfile", { ...ps.businessProfile, insuranceInfo: v })}
+                placeholder="General Liability: $2M / Workers Comp: Acme Insurance"
+              />
+            </Full>
+            <Full>
+              <TextInput
+                label="Logo URL"
+                hint="Direct link to logo image (shown in proposal header)"
+                value={ps.businessProfile.logoUrl}
+                onChange={(v) => updPS("businessProfile", { ...ps.businessProfile, logoUrl: v })}
+                placeholder="https://..."
+              />
+            </Full>
+          </Section>
+
+          {/* ── Proposal — Branding ── */}
+          <Section title="Proposal — Branding & Templates" description="Control the visual style of your proposals.">
+            <Full>
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-foreground">Template Style</label>
+                <p className="text-xs text-muted-foreground">Only Modern is active. Classic and Premium are coming soon.</p>
+                <div className="mt-2 grid grid-cols-3 gap-3">
+                  {[
+                    { value: "modern", label: "Modern", available: true },
+                    { value: "classic", label: "Classic", available: false },
+                    { value: "premium", label: "Premium", available: false },
+                  ].map(({ value, label, available }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      disabled={!available}
+                      onClick={() => updPS("branding", { ...ps.branding, templateStyle: value as ContractorProposalSettings["branding"]["templateStyle"] })}
+                      className={`rounded-xl border px-4 py-3 text-sm font-medium transition ${
+                        ps.branding.templateStyle === value
+                          ? "border-primary bg-primary/10 text-primary"
+                          : available
+                          ? "border-border bg-background text-foreground hover:border-primary/40"
+                          : "border-border/30 bg-muted/20 text-muted-foreground cursor-not-allowed opacity-50"
+                      }`}
+                    >
+                      {label}
+                      {!available && <span className="ml-1 text-[10px]">(soon)</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </Full>
+            <TextInput
+              label="Primary Color"
+              hint="Hex color (e.g. #0052FF)"
+              value={ps.branding.primaryColor}
+              onChange={(v) => updPS("branding", { ...ps.branding, primaryColor: v })}
+              placeholder="#0052FF"
+            />
+            <TextInput
+              label="Accent Color"
+              hint="Hex color (e.g. #4D7CFF)"
+              value={ps.branding.accentColor}
+              onChange={(v) => updPS("branding", { ...ps.branding, accentColor: v })}
+              placeholder="#4D7CFF"
+            />
+          </Section>
+
+          {/* ── Proposal — Payment Terms ── */}
+          <Section title="Proposal — Payment Terms" description="Default installment schedule auto-filled into new proposals.">
+            <PaymentTermsEditor
+              terms={ps.paymentTerms}
+              onChange={(terms) => updPS("paymentTerms", terms)}
+            />
+          </Section>
+
+          {/* ── Proposal — Tax & Pricing ── */}
+          <Section title="Proposal — Tax & Pricing" description="Default tax settings for new proposals. Can be overridden per proposal.">
+            <TextInput
+              label="Default State"
+              value={ps.taxSettings.defaultState}
+              onChange={(v) => updPS("taxSettings", { ...ps.taxSettings, defaultState: v })}
+              placeholder="AZ"
+            />
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-foreground">Default Tax Rate (%)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.001"
+                value={ps.taxSettings.defaultTaxRate}
+                onChange={(e) => updPS("taxSettings", { ...ps.taxSettings, defaultTaxRate: Number(e.target.value) })}
+                className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20"
+              />
+            </div>
+            <Full>
+              <Toggle
+                label="Enable Tax by Default"
+                hint="New proposals will have tax enabled when this is on"
+                checked={ps.taxSettings.taxEnabled}
+                onChange={(v) => updPS("taxSettings", { ...ps.taxSettings, taxEnabled: v })}
+              />
+            </Full>
+          </Section>
+
+          {/* ── Proposal — Legal & Text Blocks ── */}
+          <Section title="Proposal — Legal & Text Blocks" description="Default boilerplate that appears in every proposal. Edit per proposal as needed.">
+            <Full>
+              <TextArea
+                label="Warranty Language"
+                value={ps.defaultTextBlocks.warrantyLanguage}
+                onChange={(v) => updPS("defaultTextBlocks", { ...ps.defaultTextBlocks, warrantyLanguage: v })}
+                rows={3}
+              />
+            </Full>
+            <Full>
+              <TextArea
+                label="Change Order Language"
+                value={ps.defaultTextBlocks.changeOrderLanguage}
+                onChange={(v) => updPS("defaultTextBlocks", { ...ps.defaultTextBlocks, changeOrderLanguage: v })}
+                rows={3}
+              />
+            </Full>
+            <Full>
+              <TextArea
+                label="Pricing Disclaimer"
+                value={ps.defaultTextBlocks.pricingDisclaimer}
+                onChange={(v) => updPS("defaultTextBlocks", { ...ps.defaultTextBlocks, pricingDisclaimer: v })}
+                rows={2}
+              />
+            </Full>
+            <Full>
+              <TextArea
+                label="Proposal Expiration Language"
+                value={ps.defaultTextBlocks.expirationLanguage}
+                onChange={(v) => updPS("defaultTextBlocks", { ...ps.defaultTextBlocks, expirationLanguage: v })}
+                rows={2}
+              />
+            </Full>
+            <Full>
+              <TextArea
+                label="Default Assumptions"
+                hint="Pre-filled into the Assumptions list on new proposals"
+                value={ps.defaultTextBlocks.assumptions}
+                onChange={(v) => updPS("defaultTextBlocks", { ...ps.defaultTextBlocks, assumptions: v })}
+                rows={2}
+              />
+            </Full>
+            <Full>
+              <TextArea
+                label="Default Exclusions"
+                hint="Pre-filled into the Exclusions list on new proposals"
+                value={ps.defaultTextBlocks.exclusions}
+                onChange={(v) => updPS("defaultTextBlocks", { ...ps.defaultTextBlocks, exclusions: v })}
+                rows={2}
+              />
+            </Full>
+            <Full>
+              <TextArea
+                label="Client-Supplied Materials Disclaimer"
+                value={ps.defaultTextBlocks.clientSuppliedMaterials}
+                onChange={(v) => updPS("defaultTextBlocks", { ...ps.defaultTextBlocks, clientSuppliedMaterials: v })}
+                rows={2}
+              />
+            </Full>
+            <Full>
+              <TextArea
+                label="Patch / Paint / Repair Disclaimer"
+                value={ps.defaultTextBlocks.patchPaintRepair}
+                onChange={(v) => updPS("defaultTextBlocks", { ...ps.defaultTextBlocks, patchPaintRepair: v })}
+                rows={2}
+              />
+            </Full>
+          </Section>
+
+          {/* ── Proposal — AI Prompt Settings ── */}
+          <Section title="Proposal — AI Prompt Settings" description="Customize the instructions used for each AI proposal action. Changes take effect on the next run.">
+            {([
+              ["generateScopeFromJobInfo", "Generate Scope from Job Info"],
+              ["rewriteScopeProfessionally", "Rewrite Scope Professionally"],
+              ["identifyMissingDetails", "Identify Missing Details"],
+              ["generateBOMFromScope", "Generate BOM from Scope"],
+              ["generateAssumptions", "Generate Assumptions"],
+              ["generateExclusions", "Generate Exclusions"],
+              ["generateEmail", "Generate Email"],
+              ["generateSMS", "Generate SMS"],
+              ["generateProposalSummary", "Generate Proposal Summary"],
+              ["createClientFriendlyVersion", "Create Client-Friendly Version"],
+              ["createMoreDetailedVersion", "Create More Detailed Version"],
+              ["createShortVersion", "Create Short Version"],
+              ["createFormalVersion", "Create Formal Version"],
+              ["compareUploadedProposals", "Compare Uploaded Proposals (Option C)"],
+              ["extractScopeFromDocument", "Extract Scope from Document (Option C)"],
+              ["extractPricingFromDocument", "Extract Pricing from Document (Option C)"],
+            ] as [keyof ContractorProposalSettings["aiPromptSettings"], string][]).map(
+              ([key, label]) => (
+                <Full key={key}>
+                  <TextArea
+                    label={label}
+                    value={ps.aiPromptSettings[key]}
+                    onChange={(v) =>
+                      updPS("aiPromptSettings", { ...ps.aiPromptSettings, [key]: v })
+                    }
+                    rows={2}
+                  />
+                </Full>
+              )
+            )}
           </Section>
 
         </div>
