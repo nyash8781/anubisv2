@@ -9,6 +9,8 @@ import {
   Sparkles,
   LogOut,
   User,
+  FileText,
+  MessageSquare,
 } from "lucide-react";
 
 import {
@@ -31,6 +33,8 @@ type NavItem = {
 const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/jobs", label: "Jobs", icon: Briefcase },
+  { href: "/proposal", label: "Proposal Builder", icon: FileText },
+  { href: "/outreach", label: "Outreach", icon: MessageSquare },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
