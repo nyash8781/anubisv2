@@ -2,6 +2,7 @@
 
 import type { Job } from '@/types/job'
 import { MILESTONE_ORDER } from '@/types/job'
+import { useMilestones } from '@/lib/milestones-context'
 import { InputField } from './InputField'
 import { fmtMoney } from './utils'
 
@@ -12,6 +13,8 @@ type Props = {
 
 export function ScopeOfWork({ job, setField }: Props) {
   const bid = Number(job.bid || job.price) || 0
+  const { milestones } = useMilestones()
+  const milestoneLabels = milestones.length > 0 ? milestones.map((m) => m.label) : (MILESTONE_ORDER as string[])
 
   return (
     <div className="space-y-3">
@@ -30,7 +33,7 @@ export function ScopeOfWork({ job, setField }: Props) {
             onChange={(e) => setField('milestone', e.target.value)}
             className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20"
           >
-            {MILESTONE_ORDER.map((m) => (
+            {milestoneLabels.map((m) => (
               <option key={m} value={m}>
                 {m}
               </option>

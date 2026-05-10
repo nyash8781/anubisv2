@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { useAuth } from "@/lib/auth-context";
+import { MilestonesProvider } from "@/lib/milestones-context";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function AppLayout({
@@ -39,5 +40,9 @@ export default function AppLayout({
     return null;
   }
 
-  return <AppShell>{children}</AppShell>;
+  return (
+    <MilestonesProvider>
+      <AppShell>{children}</AppShell>
+    </MilestonesProvider>
+  );
 }

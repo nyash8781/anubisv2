@@ -3,10 +3,13 @@
 import Link from "next/link";
 import React, { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { AlertCircle, RefreshCw } from "lucide-react";
+import { AlertCircle, RefreshCw, LayoutList, Columns3 } from "lucide-react";
 import { apiGet, apiPost } from "@/lib/api";
 import type { Job } from "@/types/job";
 import { Skeleton } from "@/components/ui/skeleton";
+import { JobsBoard } from "@/components/jobs/JobsBoard";
+import { OpportunityPreviewPanel } from "@/components/jobs/OpportunityPreviewPanel";
+import { useMilestones } from "@/lib/milestones-context";
 
 function displayName(job: Job) {
   const first = (job.first_name || "").trim();
@@ -29,9 +32,12 @@ function fallbackOpportunityId(job: Job, index: number) {
 }
 
 export default function Home() {
+  const { milestoneLabels } = useMilestones();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [view, setView] = useState<'table' | 'board'>('table');
+  const [previewJob, setPreviewJob] = useState<Job | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -108,14 +114,37 @@ export default function Home() {
           <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
             <div className="space-y-2">
               <div>
-                <div className="text-xs font-bold uppercase tracking-[0.2em] text-primary">Jobs</div>
+                <div className="text-xs font-bold uppercase tracking-[0.2em] text-primary">Opportunities</div>
                 <h1 className="mt-1 font-display text-3xl font-normal">Opportunities</h1>
-                <p className="mt-1 text-sm text-muted-foreground">Table-first opportunity management with fast actions.</p>
+                <p className="mt-1 text-sm text-muted-foreground">Manage your pipeline across table and board views.</p>
               </div>
             </div>
-            <Link href="/opportunity/new" className="self-start rounded-xl bg-electric px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:opacity-90">
-              New Opportunity
-            </Link>
+            <div className="flex items-center gap-2 self-start">
+              {/* View toggle */}
+              <div className="flex rounded-xl border border-border bg-muted/20 p-0.5">
+                <button
+                  onClick={() => setView('table')}
+                  aria-label="Table view"
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                    view === 'table' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <LayoutList className="h-3.5 w-3.5" /> Table
+                </button>
+                <button
+                  onClick={() => setView('board')}
+                  aria-label="Board view"
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                    view === 'board' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Columns3 className="h-3.5 w-3.5" /> Board
+                </button>
+              </div>
+              <Link href="/opportunity/new" className="rounded-xl bg-electric px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:opacity-90">
+                New Opportunity
+              </Link>
+            </div>
           </div>
 
           <div className="mt-5 grid gap-3 md:grid-cols-4">
@@ -139,12 +168,25 @@ export default function Home() {
               <AlertCircle className="h-4 w-4 shrink-0" />
               Failed to load opportunities — check your connection.
             </div>
-            <button onClick={loadJobs} className="flex items-center gap-1.5 rounded-lg border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 transition">
+            <button onClick={loadJobs} aria-label="Retry loading opportunities" className="flex items-center gap-1.5 rounded-lg border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 transition">
               <RefreshCw className="h-3.5 w-3.5" /> Retry
             </button>
           </section>
         )}
 
+        {/* ── Board view ─────────────────────────────────────────────────────── */}
+        {view === 'board' && (
+          <section className="rounded-2xl border border-border bg-white p-5">
+            <JobsBoard
+              jobs={filteredJobs}
+              milestones={milestoneLabels}
+              onCardClick={(job) => setPreviewJob(job)}
+            />
+          </section>
+        )}
+
+        {/* ── Table view ─────────────────────────────────────────────────────── */}
+        {view === 'table' && (<>
         <section className="rounded-2xl border border-border bg-white p-5">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
             <input
@@ -209,6 +251,7 @@ export default function Home() {
                   <th className="px-4 py-3 font-semibold">Last Name</th>
                   <th className="px-4 py-3 font-semibold">Milestone</th>
                   <th className="px-4 py-3 font-semibold">Status</th>
+                  <th className="px-4 py-3 font-semibold">Production</th>
                   <th className="px-4 py-3 font-semibold">Last Contact</th>
                   <th className="px-4 py-3 font-semibold">Actions</th>
                   <th className="px-4 py-3 font-semibold">Profile</th>
@@ -226,8 +269,37 @@ export default function Home() {
                   ))
                 ) : filteredJobs.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-10 text-center text-sm text-muted-foreground">
-                      {error ? "Data unavailable — use the retry button above." : "No opportunities match your current filters."}
+                    <td colSpan={9}>
+                      <div className="flex flex-col items-center gap-3 px-4 py-12 text-center">
+                        <div className="text-3xl">🔍</div>
+                        <div className="space-y-1">
+                          <p className="font-semibold text-foreground">
+                            {jobs.length === 0
+                              ? "No opportunities yet"
+                              : "No opportunities match your filters"}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {jobs.length === 0
+                              ? "Create your first opportunity to start tracking leads."
+                              : `${jobs.length} total opportunit${jobs.length === 1 ? "y" : "ies"} — try adjusting your filters.`}
+                          </p>
+                        </div>
+                        {jobs.length === 0 ? (
+                          <Link
+                            href="/opportunity/new"
+                            className="rounded-xl bg-electric px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:opacity-90"
+                          >
+                            Add your first opportunity →
+                          </Link>
+                        ) : (
+                          <button
+                            onClick={clearFilters}
+                            className="rounded-xl border border-border px-4 py-2 text-sm font-semibold text-foreground transition hover:border-primary hover:text-primary"
+                          >
+                            Clear filters
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ) : (
@@ -246,7 +318,7 @@ export default function Home() {
                           </td>
 
                           <td className="px-4 py-4">
-                            <button onClick={() => toggleExpanded(job.id)} className="text-left font-semibold text-foreground transition hover:text-primary">
+                            <button onClick={() => toggleExpanded(job.id)} aria-label={`${isExpanded ? 'Collapse' : 'Expand'} details for ${name.first} ${name.last}`} aria-expanded={isExpanded} className="text-left font-semibold text-foreground transition hover:text-primary">
                               {name.first}
                             </button>
                           </td>
@@ -276,6 +348,22 @@ export default function Home() {
                             </div>
                           </td>
 
+                          <td className="px-4 py-4">
+                            {job.production_status ? (
+                              <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                job.production_status === 'Blocked'
+                                  ? 'border border-red-300/50 bg-red-100 text-red-700'
+                                  : job.production_status === 'Complete'
+                                  ? 'border border-green-300/50 bg-green-100 text-green-700'
+                                  : 'border border-border bg-muted/40 text-foreground'
+                              }`}>
+                                {job.production_status}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </td>
+
                           <td className="px-4 py-4 text-foreground">
                             <div>{lastContactText}</div>
                             {lastMethodText ? <div className="mt-1 text-xs text-muted-foreground">{lastMethodText}</div> : null}
@@ -288,6 +376,7 @@ export default function Home() {
                                   key={type}
                                   disabled={isDraft}
                                   onClick={() => runAction(job.id, type)}
+                                  aria-label={`Log ${type} contact for ${name.first} ${name.last}`}
                                   className={`rounded-lg border px-3 py-2 text-xs font-semibold transition capitalize ${
                                     isDraft
                                       ? "cursor-not-allowed border-border text-muted-foreground opacity-40"
@@ -301,15 +390,24 @@ export default function Home() {
                           </td>
 
                           <td className="px-4 py-4">
-                            <Link href={`/opportunity/${job.id}`} className="rounded-lg bg-electric px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:opacity-90">
-                              Open
-                            </Link>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => setPreviewJob(job)}
+                                aria-label={`Preview ${name.first} ${name.last}`}
+                                className="rounded-lg border border-border px-3 py-2 text-xs font-semibold text-foreground transition hover:border-primary hover:text-primary"
+                              >
+                                Preview
+                              </button>
+                              <Link href={`/opportunity/${job.id}`} className="rounded-lg bg-electric px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:opacity-90">
+                                Open
+                              </Link>
+                            </div>
                           </td>
                         </tr>
 
                         {isExpanded ? (
                           <tr className="border-b border-border bg-muted/20">
-                            <td colSpan={8} className="px-4 py-4">
+                            <td colSpan={9} className="px-4 py-4">
                               <div className="rounded-xl border border-border bg-white p-4">
                                 <div className="grid gap-3 text-sm md:grid-cols-3">
                                   <div>
@@ -339,6 +437,17 @@ export default function Home() {
             </table>
           </div>
         </section>
+        </>)}
+
+        {/* ── Preview panel (board + table) ──────────────────────────────────── */}
+        <OpportunityPreviewPanel
+          job={previewJob}
+          open={previewJob !== null}
+          onClose={() => setPreviewJob(null)}
+          onLogCall={async () => { if (previewJob?.id) { await runAction(previewJob.id, "phone"); setPreviewJob(null); } }}
+          onLogEmail={async () => { if (previewJob?.id) { await runAction(previewJob.id, "email"); setPreviewJob(null); } }}
+          onLogText={async () => { if (previewJob?.id) { await runAction(previewJob.id, "text"); setPreviewJob(null); } }}
+        />
       </div>
     </main>
   );

@@ -5,6 +5,9 @@ export type Milestone = 'Lead' | 'Site Visit' | 'Proposal' | 'Construction' | 'C
 export type JobStatus = 'Draft' | 'New' | 'Contacted' | 'Closed'
 export type ContactMethod = 'call' | 'text' | 'email' | 'manual'
 export type ActionType = ContactMethod | 'completed'
+export type ProductionStatus = 'Not Scheduled' | 'Ready' | 'Scheduled' | 'In Progress' | 'Blocked' | 'Complete'
+export type PaymentStatus = 'Not Started' | 'Deposit Pending' | 'Deposit Paid' | 'In Progress' | 'Overdue' | 'Paid In Full'
+export type DepositStatus = 'N/A' | 'Pending' | 'Paid'
 
 export type JobFlags = {
   isStale: boolean
@@ -45,7 +48,7 @@ export type Job = {
 
   // Notes & workflow
   notes?: string
-  milestone?: Milestone
+  milestone?: string   // dynamic — may be any user-defined label, not just Milestone enum
   status?: JobStatus
   contact_status?: string
 
@@ -57,12 +60,26 @@ export type Job = {
   generated_follow_up?: string
   generated_upsell?: string
 
+  // Production workflow (Phase 1)
+  production_status?: ProductionStatus
+  production_blocker?: string
+  production_owner?: string
+  scheduled_date?: string
+
+  // Payment status (Phase 1)
+  payment_status?: PaymentStatus
+  deposit_status?: DepositStatus
+
   // Timestamps
   created_at?: string
   updated_at?: string
 
   // Computed by normalizeJob — never stored
   flags?: JobFlags
+
+  // Derived stale/aging fields attached by backend normalizeJob
+  is_stale?: boolean
+  days_since_contact?: number
 }
 
 export const MILESTONE_ORDER: Milestone[] = [

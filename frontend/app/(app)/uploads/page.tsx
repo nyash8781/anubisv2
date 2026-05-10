@@ -1,40 +1,33 @@
-import { Upload } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+"use client";
+
+import { Upload, FolderOpen } from "lucide-react";
+import Link from "next/link";
 
 export default function UploadsPage() {
   return (
-    <div className="mx-auto max-w-7xl p-6 space-y-6">
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <h1 className="text-3xl font-semibold tracking-tight">Uploads</h1>
-          <Badge variant="outline">Phase 2</Badge>
+    <div className="min-h-screen bg-background">
+      <div className="mx-auto max-w-3xl px-6 py-16 text-center space-y-6">
+        <div className="mx-auto h-14 w-14 rounded-2xl bg-muted flex items-center justify-center">
+          <FolderOpen className="h-7 w-7 text-muted-foreground" />
         </div>
-        <p className="text-muted-foreground">
-          Dedicated file manager across all jobs — photos, proposals, contracts,
-          signed change orders. Timestamped, geotagged, immutable.
+        <div className="space-y-2">
+          <h1 className="text-2xl font-display font-semibold tracking-tight">Documents</h1>
+          <p className="text-muted-foreground max-w-sm mx-auto text-sm">
+            Upload and organize project photos, contracts, and documents — with timestamps, geotags, and immutable records for legal protection.
+          </p>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Coming soon. In the meantime, attach documents directly to individual opportunities.
         </p>
+        <div className="flex gap-3 justify-center">
+          <Link
+            href="/jobs"
+            className="rounded-xl border border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted transition"
+          >
+            Go to Opportunities
+          </Link>
+        </div>
       </div>
-
-      <Card>
-        <CardHeader>
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <Upload className="h-5 w-5" />
-          </div>
-          <CardTitle className="pt-3">Ships week 4</CardTitle>
-          <CardDescription>Planned scope — treat project photos as legal evidence</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ul className="space-y-2 text-sm text-muted-foreground">
-            <li>• Cross-opportunity photo / file browser</li>
-            <li>• EXIF preservation + server-side timestamp + GPS metadata</li>
-            <li>• Per-file immutable flag (liability shield for contractor)</li>
-            <li>• Upload via drag-drop, mobile camera, or bulk import</li>
-            <li>• Optional portal visibility per file (show homeowner vs keep internal)</li>
-            <li>• Cloudflare R2 storage with signed URLs</li>
-          </ul>
-        </CardContent>
-      </Card>
     </div>
   );
 }

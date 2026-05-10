@@ -61,6 +61,10 @@ const env = {
   r2AccessKey: process.env.R2_ACCESS_KEY || '',
   r2SecretKey: process.env.R2_SECRET_KEY || '',
   r2BucketName: process.env.R2_BUCKET_NAME || '',
+
+  // Public-facing URL for the deployed frontend. Used to build share links
+  // (e.g. proposal public view), invite emails, etc.
+  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
 };
 
 const serviceRequirements = {

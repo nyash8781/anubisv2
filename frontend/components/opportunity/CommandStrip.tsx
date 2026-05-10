@@ -6,7 +6,7 @@ import type { Job } from '@/types/job'
 import { MILESTONE_ORDER } from '@/types/job'
 import { RiskBadge } from './RiskBadge'
 import { fmtMoney, fmtDate } from './utils'
-import { daysUntil, type RiskLevel, type NBAAction, type ActionType, type UiMessage } from './job-utils'
+import { daysUntil, type RiskLevel, type NBAAction, type ActionType } from './job-utils'
 
 type Props = {
   job: Job
@@ -20,30 +20,14 @@ type Props = {
   nbaSnoozed: boolean
   saving: boolean
   dirty: boolean
-  message: UiMessage
   currentMilestoneIdx: number
+  milestones?: string[]
   onSave: () => void
   onViewProfile: () => void
   onExecuteNba: (action: ActionType) => void
   onSnoozeNba: () => void
   onDismissNba: () => void
   onMilestoneChange: (milestone: string) => void
-  onDismissMessage: () => void
-}
-
-function Toast({ message, onDismiss }: { message: UiMessage; onDismiss: () => void }) {
-  if (!message) return null
-  const styles: Record<string, string> = {
-    success: 'border-green-500/30 bg-green-50 text-green-700',
-    error: 'border-red-500/30 bg-red-50 text-red-700',
-    info: 'border-primary/30 bg-primary/5 text-primary',
-  }
-  return (
-    <div className={`flex items-center justify-between rounded-xl border px-4 py-3 text-sm font-medium ${styles[message.type]}`}>
-      <span>{message.text}</span>
-      <button onClick={onDismiss} className="ml-4 opacity-60 hover:opacity-100">✕</button>
-    </div>
-  )
 }
 
 export function CommandStrip({
@@ -58,16 +42,16 @@ export function CommandStrip({
   nbaSnoozed,
   saving,
   dirty,
-  message,
   currentMilestoneIdx,
+  milestones: milestonesProp,
   onSave,
   onViewProfile,
   onExecuteNba,
   onSnoozeNba,
   onDismissNba,
   onMilestoneChange,
-  onDismissMessage,
 }: Props) {
+  const milestoneList = (milestonesProp && milestonesProp.length > 0) ? milestonesProp : MILESTONE_ORDER as string[];
   return (
     <section className="space-y-4 rounded-2xl border border-border bg-white p-5 shadow-sm">
 
@@ -229,7 +213,7 @@ export function CommandStrip({
           Project Lifecycle
         </div>
         <div className="flex gap-2 overflow-x-auto pb-1">
-          {MILESTONE_ORDER.map((m, i) => {
+          {milestoneList.map((m, i) => {
             const state =
               i < currentMilestoneIdx ? 'complete' : i === currentMilestoneIdx ? 'current' : 'upcoming'
             return (
@@ -252,7 +236,6 @@ export function CommandStrip({
         </div>
       </div>
 
-      {message && <Toast message={message} onDismiss={onDismissMessage} />}
     </section>
   )
 }

@@ -20,6 +20,7 @@ type Props = {
   onLogCall: () => void
   onLogText: () => void
   onLogEmail: () => void
+  fieldErrors?: Record<string, string>
 }
 
 const TABS = ['Profile', 'System', 'Notes'] as const
@@ -37,6 +38,7 @@ export function ClientProfileDrawer({
   onLogCall,
   onLogText,
   onLogEmail,
+  fieldErrors = {},
 }: Props) {
   const [tab, setTab] = useState<DrawerTab>('Profile')
 
@@ -108,6 +110,8 @@ export function ClientProfileDrawer({
                       label="First Name"
                       value={job.first_name}
                       onChange={(v) => setField('first_name', v)}
+                      required
+                      error={fieldErrors.customer_name}
                     />
                     <InputField
                       label="Last Name"
@@ -141,6 +145,7 @@ export function ClientProfileDrawer({
                         label="Mobile #1"
                         value={job.mobile_number_1}
                         onChange={(v) => setField('mobile_number_1', v)}
+                        error={fieldErrors.mobile_number_1}
                       />
                     </div>
                     <div className="flex gap-1 pb-0.5">
@@ -171,6 +176,7 @@ export function ClientProfileDrawer({
                         label="Email"
                         value={job.email}
                         onChange={(v) => setField('email', v)}
+                        error={fieldErrors.email}
                       />
                     </div>
                     <button

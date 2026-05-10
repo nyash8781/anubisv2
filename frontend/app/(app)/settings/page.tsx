@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp, AlertCircle, RefreshCw, Plus, Trash2 } from "lucide-react";
-import { apiGet, apiPut } from "@/lib/api";
+import { useEffect, useState, useCallback } from "react";
+import { ChevronDown, ChevronUp, AlertCircle, RefreshCw, Plus, Trash2, GripVertical, Users, Check, X } from "lucide-react";
+import { apiGet, apiPut, apiPost, apiDelete } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { mergeProposalSettings, DEFAULT_PROPOSAL_SETTINGS } from "@/lib/services/proposalSettingsService";
+import { toast } from "sonner";
+import { z } from "zod";
+import { useMilestones, type MilestoneRow } from "@/lib/milestones-context";
 import type {
   ContractorProposalSettings,
   PaymentTerm,
@@ -109,10 +112,10 @@ const defaults: Settings = {
   preferred_contact_window: "",
   default_new_status: "Draft",
   default_new_milestone: "Lead",
-  stale_lead_days: "3",
-  stale_site_visit_days: "5",
-  stale_proposal_days: "5",
-  stale_construction_days: "7",
+  stale_lead_days: "30",
+  stale_site_visit_days: "14",
+  stale_proposal_days: "30",
+  stale_construction_days: "14",
   aging_threshold_days: "60",
   auto_mark_contacted_email: true,
   auto_mark_contacted_text: true,
@@ -123,30 +126,61 @@ const defaults: Settings = {
 };
 
 // ---------------------------------------------------------------------------
+// Validation schemas
+// ---------------------------------------------------------------------------
+const businessValidationSchema = z.object({
+  business_name: z.string().min(1, "Business name is required"),
+  company_contact_name: z.string().optional(),
+  company_phone: z.string().regex(/^\d{10}$|^$/, "Phone must be 10 digits").optional().or(z.literal("")),
+  company_email: z.string().email("Invalid email format").optional().or(z.literal("")),
+  website: z.string().url("Invalid URL").optional().or(z.literal("")),
+  license_number: z.string().optional(),
+});
+
+const aiCommsValidationSchema = z.object({
+  base_prompt: z.string().max(2000, "Base prompt cannot exceed 2000 characters"),
+  business_context: z.string().max(4000, "Business context cannot exceed 4000 characters"),
+});
+
+const pipelineValidationSchema = z.object({
+  stale_lead_days: z.string().regex(/^\d+$/, "Must be a number").optional().or(z.literal("")),
+  stale_site_visit_days: z.string().regex(/^\d+$/, "Must be a number").optional().or(z.literal("")),
+  stale_proposal_days: z.string().regex(/^\d+$/, "Must be a number").optional().or(z.literal("")),
+  stale_construction_days: z.string().regex(/^\d+$/, "Must be a number").optional().or(z.literal("")),
+  aging_threshold_days: z.string().regex(/^\d+$/, "Must be a number").optional().or(z.literal("")),
+});
+
+const proposalValidationSchema = z.object({
+  // Can add validation for proposal-specific fields here if needed
+});
+
+// ---------------------------------------------------------------------------
 // Primitive input components
 // ---------------------------------------------------------------------------
-function TextInput({ label, hint, value, onChange, placeholder = "", type = "text" }: {
-  label: string; hint?: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string;
+function TextInput({ label, hint, value, onChange, placeholder = "", type = "text", error }: {
+  label: string; hint?: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string; error?: string;
 }) {
   return (
     <div className="space-y-1">
       <label className="block text-sm font-medium text-foreground">{label}</label>
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
       <input type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
-        className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20" />
+        className={`h-9 w-full rounded-lg border ${error ? "border-red-500 bg-red-50" : "border-input bg-background"} px-3 text-sm outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20`} />
+      {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
   );
 }
 
-function TextArea({ label, hint, value, onChange, placeholder = "", rows = 3 }: {
-  label: string; hint?: string; value: string; onChange: (v: string) => void; placeholder?: string; rows?: number;
+function TextArea({ label, hint, value, onChange, placeholder = "", rows = 3, error }: {
+  label: string; hint?: string; value: string; onChange: (v: string) => void; placeholder?: string; rows?: number; error?: string;
 }) {
   return (
     <div className="space-y-1">
       <label className="block text-sm font-medium text-foreground">{label}</label>
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
       <textarea value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} rows={rows}
-        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm leading-6 outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20" />
+        className={`w-full rounded-lg border ${error ? "border-red-500 bg-red-50" : "border-input bg-background"} px-3 py-2 text-sm leading-6 outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20`} />
+      {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
   );
 }
@@ -175,8 +209,14 @@ function Toggle({ label, hint, checked, onChange }: {
         <p className="text-sm font-medium text-foreground">{label}</p>
         {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
       </div>
-      <button type="button" onClick={() => onChange(!checked)}
-        className={`relative mt-0.5 inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors ${checked ? "bg-primary" : "bg-border"}`}>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        onClick={() => onChange(!checked)}
+        className={`relative mt-0.5 inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors ${checked ? "bg-primary" : "bg-border"}`}
+      >
         <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${checked ? "translate-x-4" : "translate-x-0.5"}`} />
       </button>
     </div>
@@ -189,15 +229,20 @@ function Section({ title, description, defaultOpen = false, children }: {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div className="rounded-2xl border border-border bg-white overflow-hidden">
-      <button type="button" onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between px-5 py-4 text-left transition hover:bg-muted/30">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={`section-${title.replace(/\s+/g, '-').toLowerCase()}`}
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between px-5 py-4 text-left transition hover:bg-muted/30"
+      >
         <div>
           <p className="text-sm font-semibold text-foreground">{title}</p>
           <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
         </div>
         {open ? <ChevronUp className="h-4 w-4 flex-shrink-0 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />}
       </button>
-      {open && <div className="grid gap-4 border-t border-border px-5 py-5 sm:grid-cols-2">{children}</div>}
+      {open && <div id={`section-${title.replace(/\s+/g, '-').toLowerCase()}`} className="grid gap-4 border-t border-border px-5 py-5 sm:grid-cols-2">{children}</div>}
     </div>
   );
 }
@@ -311,13 +356,61 @@ function PaymentTermsEditor({
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
+type SettingsTab = 'business' | 'ai-comms' | 'pipeline' | 'proposal' | 'milestones' | 'team';
+
+const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
+  { id: 'business', label: 'Business' },
+  { id: 'ai-comms', label: 'AI & Comms' },
+  { id: 'pipeline', label: 'Pipeline' },
+  { id: 'proposal', label: 'Proposal' },
+  { id: 'milestones', label: 'Milestones' },
+  { id: 'team', label: 'Team' },
+];
+
+type TeamMember = {
+  id: string;
+  email: string;
+  role: string;
+  status: 'pending' | 'active' | 'revoked';
+  created_at: string;
+};
+
 export default function SettingsPage() {
   const [s, setS] = useState<Settings>(defaults);
+  const [original, setOriginal] = useState<Settings>(defaults);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [activeTab, setActiveTab] = useState<SettingsTab>('business');
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Milestones tab
+  const { milestones, createMilestone, updateMilestone, deleteMilestone, loading: milestonesLoading } = useMilestones();
+  const [editingMilestone, setEditingMilestone] = useState<string | null>(null);
+  const [milestoneEdits, setMilestoneEdits] = useState<Partial<MilestoneRow>>({});
+  const [newMilestoneLabel, setNewMilestoneLabel] = useState("");
+  const [addingMilestone, setAddingMilestone] = useState(false);
+
+  // Team tab
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [teamLoading, setTeamLoading] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("member");
+  const [inviting, setInviting] = useState(false);
+
+  const loadTeam = useCallback(async () => {
+    setTeamLoading(true);
+    try {
+      const data = await apiGet<TeamMember[]>('/team');
+      setTeamMembers(Array.isArray(data) ? data : []);
+    } catch {
+      toast.error("Failed to load team members.");
+    } finally {
+      setTeamLoading(false);
+    }
+  }, []);
 
   const load = () => {
     setLoadError(false);
@@ -328,19 +421,23 @@ export default function SettingsPage() {
         const proposalSettings = mergeProposalSettings(
           rawExtra.proposal_settings as ContractorProposalSettings | undefined
         );
-        setS({
+        const loaded = {
           ...defaults,
           base_prompt: remote.base_prompt || defaults.base_prompt,
           business_context: remote.business_context || defaults.business_context,
           ...rawExtra,
           proposal_settings: proposalSettings,
-        } as Settings);
+        } as Settings;
+        setS(loaded);
+        setOriginal(loaded);
+        setErrors({});
       })
       .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
   };
 
   useEffect(() => { load(); }, []);
+  useEffect(() => { if (activeTab === 'team') loadTeam(); }, [activeTab, loadTeam]);
 
   function upd<K extends keyof Settings>(key: K, value: Settings[K]) {
     setS((prev) => ({ ...prev, [key]: value }));
@@ -359,19 +456,173 @@ export default function SettingsPage() {
   const bool = (key: keyof Settings) => (s[key] as boolean) ?? false;
   const ps = s.proposal_settings;
 
+  const validateTab = (tab: SettingsTab) => {
+    const newErrors: Record<string, string> = {};
+
+    if (tab === 'business') {
+      const result = businessValidationSchema.safeParse({
+        business_name: s.business_name,
+        company_contact_name: s.company_contact_name,
+        company_phone: s.company_phone,
+        company_email: s.company_email,
+        website: s.website,
+        license_number: s.license_number,
+      });
+      if (!result.success) {
+        result.error.errors.forEach((err) => {
+          newErrors[err.path[0] as string] = err.message;
+        });
+      }
+    } else if (tab === 'ai-comms') {
+      const result = aiCommsValidationSchema.safeParse({
+        base_prompt: s.base_prompt,
+        business_context: s.business_context,
+      });
+      if (!result.success) {
+        result.error.errors.forEach((err) => {
+          newErrors[err.path[0] as string] = err.message;
+        });
+      }
+    } else if (tab === 'pipeline') {
+      const result = pipelineValidationSchema.safeParse({
+        stale_lead_days: s.stale_lead_days,
+        stale_site_visit_days: s.stale_site_visit_days,
+        stale_proposal_days: s.stale_proposal_days,
+        stale_construction_days: s.stale_construction_days,
+        aging_threshold_days: s.aging_threshold_days,
+      });
+      if (!result.success) {
+        result.error.errors.forEach((err) => {
+          newErrors[err.path[0] as string] = err.message;
+        });
+      }
+    } else if (tab === 'proposal') {
+      // Proposal tab has optional validation
+      if (ps.taxSettings.defaultTaxRate < 0 || ps.taxSettings.defaultTaxRate > 100) {
+        newErrors.defaultTaxRate = "Tax rate must be between 0 and 100";
+      }
+      if (ps.paymentTerms.length === 0) {
+        newErrors.paymentTerms = "At least one payment term is required";
+      }
+      const totalPercentage = ps.paymentTerms.reduce((sum, t) => sum + (Number(t.percentage) || 0), 0);
+      if (totalPercentage !== 100) {
+        newErrors.paymentTerms = `Payment terms must total 100% (currently ${totalPercentage}%)`;
+      }
+    }
+
+    return newErrors;
+  };
+
+  async function inviteTeamMember() {
+    if (!inviteEmail.trim()) return;
+    setInviting(true);
+    try {
+      await apiPost('/team/invite', { email: inviteEmail.trim(), role: inviteRole });
+      toast.success(`Invite sent to ${inviteEmail.trim()}.`);
+      setInviteEmail("");
+      await loadTeam();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to send invite";
+      toast.error(msg);
+    } finally {
+      setInviting(false);
+    }
+  }
+
+  async function updateTeamStatus(id: string, status: TeamMember['status']) {
+    try {
+      await apiPut(`/team/${id}`, { status });
+      setTeamMembers((prev) => prev.map((m) => m.id === id ? { ...m, status } : m));
+    } catch {
+      toast.error("Failed to update member.");
+    }
+  }
+
+  async function removeTeamMember(id: string) {
+    try {
+      await apiDelete(`/team/${id}`);
+      setTeamMembers((prev) => prev.filter((m) => m.id !== id));
+      toast.success("Team member removed.");
+    } catch {
+      toast.error("Failed to remove member.");
+    }
+  }
+
+  async function saveMilestoneEdit(id: string) {
+    try {
+      await updateMilestone(id, milestoneEdits);
+      setEditingMilestone(null);
+      setMilestoneEdits({});
+      toast.success("Milestone updated.");
+    } catch {
+      toast.error("Failed to update milestone.");
+    }
+  }
+
+  async function handleAddMilestone() {
+    if (!newMilestoneLabel.trim()) return;
+    setAddingMilestone(true);
+    try {
+      await createMilestone({
+        label: newMilestoneLabel.trim(),
+        order_index: milestones.length,
+        stale_days: 14,
+        color: '#6B7280',
+        is_terminal: false,
+      });
+      setNewMilestoneLabel("");
+      toast.success("Milestone added.");
+    } catch {
+      toast.error("Failed to add milestone.");
+    } finally {
+      setAddingMilestone(false);
+    }
+  }
+
+  async function handleDeleteMilestone(id: string) {
+    if (milestones.length <= 1) {
+      toast.error("You must have at least one milestone.");
+      return;
+    }
+    try {
+      await deleteMilestone(id);
+      toast.success("Milestone deleted.");
+    } catch {
+      toast.error("Failed to delete milestone.");
+    }
+  }
+
   async function save() {
+    // Validate based on active tab
+    const newErrors = validateTab(activeTab);
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      toast.error("Please fix the validation errors below before saving.");
+      return;
+    }
+
     setSaving(true);
     setFeedback(null);
     const { base_prompt, business_context, ...extra } = s;
     try {
       await apiPut("/settings", { base_prompt, business_context, extra });
-      setFeedback({ type: "success", text: "Settings saved." });
+      toast.success("Settings saved successfully.");
+      setOriginal(s);
       setDirty(false);
-    } catch {
-      setFeedback({ type: "error", text: "Failed to save — check your connection." });
+      setErrors({});
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to save settings";
+      toast.error(message);
     } finally {
       setSaving(false);
     }
+  }
+
+  const handleCancel = () => {
+    setS(original);
+    setDirty(false);
+    setErrors({});
+    toast.success("Changes discarded.");
   }
 
   if (loading) {
@@ -396,13 +647,31 @@ export default function SettingsPage() {
           <p className="text-sm text-muted-foreground">Configure how Anubis represents your business and generates AI content.</p>
         </div>
 
+        {/* Tab navigation */}
+        <div className="flex gap-1 rounded-xl border border-border bg-muted/30 p-1">
+          {SETTINGS_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                activeTab === tab.id
+                  ? "bg-white shadow-sm text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
         {loadError && (
           <div className="flex items-center justify-between rounded-2xl border border-red-200 bg-red-50 p-4">
             <div className="flex items-center gap-2 text-sm text-red-700">
               <AlertCircle className="h-4 w-4 shrink-0" />
               Failed to load settings — check your connection.
             </div>
-            <button onClick={load} className="flex items-center gap-1.5 rounded-lg border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 transition">
+            <button onClick={load} aria-label="Retry loading settings" className="flex items-center gap-1.5 rounded-lg border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 transition">
               <RefreshCw className="h-3.5 w-3.5" /> Retry
             </button>
           </div>
@@ -410,16 +679,19 @@ export default function SettingsPage() {
 
         <div className="space-y-3">
 
+          {/* ── Business tab ── */}
+          {activeTab === 'business' && <>
+
           {/* ── Business Identity ── */}
           <Section title="Business Identity" description="Core company info used in communications and documents." defaultOpen>
             <Full>
-              <TextInput label="Business Name" value={str("business_name")} onChange={(v) => upd("business_name", v)} placeholder="Apex Roofing & Construction" />
+              <TextInput label="Business Name" value={str("business_name")} onChange={(v) => upd("business_name", v)} error={errors.business_name} placeholder="Apex Roofing & Construction" />
             </Full>
-            <TextInput label="Contact Name" value={str("company_contact_name")} onChange={(v) => upd("company_contact_name", v)} placeholder="John Smith" />
-            <TextInput label="Phone" value={str("company_phone")} onChange={(v) => upd("company_phone", v)} placeholder="(602) 555-0100" type="tel" />
-            <TextInput label="Email" value={str("company_email")} onChange={(v) => upd("company_email", v)} placeholder="info@apexroofing.com" type="email" />
-            <TextInput label="Website" value={str("website")} onChange={(v) => upd("website", v)} placeholder="https://apexroofing.com" />
-            <TextInput label="License Number" value={str("license_number")} onChange={(v) => upd("license_number", v)} placeholder="ROC-123456" />
+            <TextInput label="Contact Name" value={str("company_contact_name")} onChange={(v) => upd("company_contact_name", v)} error={errors.company_contact_name} placeholder="John Smith" />
+            <TextInput label="Phone" value={str("company_phone")} onChange={(v) => upd("company_phone", v)} error={errors.company_phone} placeholder="(602) 555-0100" type="tel" />
+            <TextInput label="Email" value={str("company_email")} onChange={(v) => upd("company_email", v)} error={errors.company_email} placeholder="info@apexroofing.com" type="email" />
+            <TextInput label="Website" value={str("website")} onChange={(v) => upd("website", v)} error={errors.website} placeholder="https://apexroofing.com" />
+            <TextInput label="License Number" value={str("license_number")} onChange={(v) => upd("license_number", v)} error={errors.license_number} placeholder="ROC-123456" />
             <Full>
               <TextInput label="Address" value={str("company_address")} onChange={(v) => upd("company_address", v)} placeholder="123 Main St, Phoenix, AZ 85001" />
             </Full>
@@ -431,11 +703,23 @@ export default function SettingsPage() {
             </Full>
           </Section>
 
+          {/* ── Contact Preferences ── */}
+          <Section title="Contact Preferences" description="Defaults for how and when to reach customers.">
+            <SelectInput label="Default Contact Method" value={str("default_contact_method_preference")} onChange={(v) => upd("default_contact_method_preference", v)} options={["", "Call", "Text", "Email"]} />
+            <TextInput label="Preferred Contact Window" value={str("preferred_contact_window")} onChange={(v) => upd("preferred_contact_window", v)} placeholder="Weekdays 9am–5pm" />
+          </Section>
+
+          </> /* end business tab */}
+
+          {/* ── AI & Comms tab ── */}
+          {activeTab === 'ai-comms' && <>
+
           {/* ── AI Behavior ── */}
           <Section title="AI Behavior" description="Controls how the AI writes messages and proposals." defaultOpen>
             <Full>
               <TextArea label="AI Tone & Style" hint="Core instruction for how the AI should write. One or two sentences."
                 value={str("base_prompt")} onChange={(v) => upd("base_prompt", v)}
+                error={errors.base_prompt}
                 placeholder="Write in a professional but friendly tone. Be direct and avoid filler words." rows={3} />
             </Full>
             <SelectInput label="Tone" value={str("tone")} onChange={(v) => upd("tone", v)} options={["Professional", "Friendly", "Casual", "Formal", "Empathetic"]} />
@@ -449,11 +733,12 @@ export default function SettingsPage() {
             </Full>
           </Section>
 
-          {/* ── Business Profile ── */}
+          {/* ── Business Profile (shown in AI & Comms tab for AI context) ── */}
           <Section title="Business Profile" description="Background about your company the AI uses when generating content.">
             <Full>
               <TextArea label="Business Context" hint="Services, geography, specialties — anything the AI should know."
                 value={str("business_context")} onChange={(v) => upd("business_context", v)}
+                error={errors.business_context}
                 placeholder="We specialize in commercial flat roofing in the Phoenix metro area. Most projects are $15k–$80k." rows={4} />
             </Full>
             <TextInput label="Business Type" value={str("business_type")} onChange={(v) => upd("business_type", v)} placeholder="General Contractor" />
@@ -494,22 +779,22 @@ export default function SettingsPage() {
             </Full>
           </Section>
 
-          {/* ── Contact Preferences ── */}
-          <Section title="Contact Preferences" description="Defaults for how and when to reach customers.">
-            <SelectInput label="Default Contact Method" value={str("default_contact_method_preference")} onChange={(v) => upd("default_contact_method_preference", v)} options={["", "Call", "Text", "Email"]} />
-            <TextInput label="Preferred Contact Window" value={str("preferred_contact_window")} onChange={(v) => upd("preferred_contact_window", v)} placeholder="Weekdays 9am–5pm" />
-          </Section>
+          </> /* end ai-comms tab */}
+
+          {/* ── Pipeline tab ── */}
+          {activeTab === 'pipeline' && <>
 
           {/* ── Pipeline Defaults ── */}
-          <Section title="Pipeline Defaults" description="Starting values and stale-lead thresholds for new opportunities.">
+          <Section title="Pipeline Defaults" description="Starting values and aging thresholds for new job opportunities.">
             <SelectInput label="Default New Status" value={str("default_new_status")} onChange={(v) => upd("default_new_status", v)} options={["Draft", "New", "Contacted"]} />
-            <SelectInput label="Default New Milestone" value={str("default_new_milestone")} onChange={(v) => upd("default_new_milestone", v)} options={["Lead", "Site Visit", "Proposal", "Construction"]} />
-            <TextInput label="Stale — Lead (days)" value={str("stale_lead_days")} onChange={(v) => upd("stale_lead_days", v)} placeholder="3" type="number" />
-            <TextInput label="Stale — Site Visit (days)" value={str("stale_site_visit_days")} onChange={(v) => upd("stale_site_visit_days", v)} placeholder="5" type="number" />
-            <TextInput label="Stale — Proposal (days)" value={str("stale_proposal_days")} onChange={(v) => upd("stale_proposal_days", v)} placeholder="5" type="number" />
-            <TextInput label="Stale — Construction (days)" value={str("stale_construction_days")} onChange={(v) => upd("stale_construction_days", v)} placeholder="7" type="number" />
-            <TextInput label="Aging Threshold (days)" hint="Mark opportunity as old after this many days total." value={str("aging_threshold_days")} onChange={(v) => upd("aging_threshold_days", v)} placeholder="60" type="number" />
+            <SelectInput label="Default New Milestone" value={str("default_new_milestone")} onChange={(v) => upd("default_new_milestone", v)} options={milestones.length > 0 ? milestones.map((m) => m.label) : ["Lead", "Site Visit", "Proposal", "Construction"]} />
+            <TextInput label="Aging Threshold (days)" hint="Mark opportunity as old after this many days total." value={str("aging_threshold_days")} onChange={(v) => upd("aging_threshold_days", v)} error={errors.aging_threshold_days} placeholder="60" type="number" />
             <TextInput label="Opportunity ID Format" value={str("opportunity_id_format")} onChange={(v) => upd("opportunity_id_format", v)} placeholder="YYMMDDXXXX" />
+            <Full>
+              <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-xs text-muted-foreground">
+                <span className="font-semibold text-primary">Per-milestone stale days</span> are now configured in the <span className="font-medium text-foreground">Milestones</span> tab. Each milestone has its own threshold and color.
+              </div>
+            </Full>
             <Full>
               <div className="space-y-3">
                 <Toggle label="Auto-mark Contacted on Email" checked={bool("auto_mark_contacted_email")} onChange={(v) => upd("auto_mark_contacted_email", v)} />
@@ -519,6 +804,11 @@ export default function SettingsPage() {
               </div>
             </Full>
           </Section>
+
+          </> /* end pipeline tab */}
+
+          {/* ── Proposal tab ── */}
+          {activeTab === 'proposal' && <>
 
           {/* ═══════════════════════════════════════════════
               PROPOSAL SETTINGS
@@ -660,6 +950,7 @@ export default function SettingsPage() {
               terms={ps.paymentTerms}
               onChange={(terms) => updPS("paymentTerms", terms)}
             />
+            {errors.paymentTerms && <Full><p className="text-sm text-red-600">{errors.paymentTerms}</p></Full>}
           </Section>
 
           {/* ── Proposal — Tax & Pricing ── */}
@@ -796,6 +1087,192 @@ export default function SettingsPage() {
             )}
           </Section>
 
+          </> /* end proposal tab */}
+
+          {/* ── Milestones tab ── */}
+          {activeTab === 'milestones' && (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-border bg-white overflow-hidden">
+                <div className="px-5 py-4 border-b">
+                  <p className="text-sm font-semibold text-foreground">Pipeline Milestones</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">Add, rename, or remove milestones. Changes apply across all opportunities.</p>
+                </div>
+                <div className="divide-y divide-border">
+                  {milestonesLoading ? (
+                    <div className="px-5 py-6 text-sm text-muted-foreground">Loading milestones…</div>
+                  ) : milestones.length === 0 ? (
+                    <div className="px-5 py-6 text-sm text-muted-foreground">No milestones found. Add one below.</div>
+                  ) : milestones.map((m) => (
+                    <div key={m.id} className="px-5 py-3 flex items-center gap-3">
+                      <GripVertical className="h-4 w-4 text-muted-foreground/40 shrink-0" />
+                      <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: m.color }} />
+                      {editingMilestone === m.id ? (
+                        <div className="flex flex-1 items-center gap-2 flex-wrap">
+                          <input
+                            value={milestoneEdits.label ?? m.label}
+                            onChange={(e) => setMilestoneEdits((prev) => ({ ...prev, label: e.target.value }))}
+                            className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:border-primary w-36"
+                          />
+                          <input
+                            type="number"
+                            min="0"
+                            value={milestoneEdits.stale_days ?? m.stale_days}
+                            onChange={(e) => setMilestoneEdits((prev) => ({ ...prev, stale_days: Number(e.target.value) }))}
+                            className="h-8 w-20 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:border-primary"
+                            title="Stale after (days)"
+                          />
+                          <span className="text-xs text-muted-foreground">days stale</span>
+                          <input
+                            type="color"
+                            value={milestoneEdits.color ?? m.color}
+                            onChange={(e) => setMilestoneEdits((prev) => ({ ...prev, color: e.target.value }))}
+                            className="h-8 w-10 rounded border border-input bg-background cursor-pointer"
+                            title="Color"
+                          />
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={milestoneEdits.is_terminal ?? m.is_terminal}
+                              onChange={(e) => setMilestoneEdits((prev) => ({ ...prev, is_terminal: e.target.checked }))}
+                              className="rounded"
+                            />
+                            Terminal
+                          </label>
+                          <button onClick={() => saveMilestoneEdit(m.id)} className="rounded-lg p-1 text-green-600 hover:bg-green-50 transition" title="Save">
+                            <Check className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => { setEditingMilestone(null); setMilestoneEdits({}); }} className="rounded-lg p-1 text-muted-foreground hover:bg-muted transition" title="Cancel">
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm font-medium">{m.label}</span>
+                            <span className="ml-2 text-xs text-muted-foreground">stale after {m.stale_days}d</span>
+                            {m.is_terminal && <span className="ml-2 text-xs text-muted-foreground">(terminal)</span>}
+                          </div>
+                          <button
+                            onClick={() => { setEditingMilestone(m.id); setMilestoneEdits({}); }}
+                            className="text-xs text-muted-foreground hover:text-foreground transition px-2 py-1 rounded-lg hover:bg-muted"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDeleteMilestone(m.id)}
+                            disabled={milestones.length <= 1}
+                            className="rounded-lg p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition disabled:opacity-30"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="px-5 py-4 border-t bg-muted/20 flex items-center gap-2">
+                  <input
+                    value={newMilestoneLabel}
+                    onChange={(e) => setNewMilestoneLabel(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddMilestone()}
+                    placeholder="New milestone name…"
+                    className="h-8 flex-1 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary"
+                  />
+                  <button
+                    onClick={handleAddMilestone}
+                    disabled={addingMilestone || !newMilestoneLabel.trim()}
+                    className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white transition hover:opacity-90 disabled:opacity-50"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Team tab ── */}
+          {activeTab === 'team' && (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-border bg-white overflow-hidden">
+                <div className="px-5 py-4 border-b">
+                  <p className="text-sm font-semibold text-foreground">Team Members</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">Invite colleagues to access and manage opportunities.</p>
+                </div>
+                {teamLoading ? (
+                  <div className="px-5 py-6 text-sm text-muted-foreground">Loading team…</div>
+                ) : teamMembers.length === 0 ? (
+                  <div className="px-5 py-6 flex items-center gap-3 text-sm text-muted-foreground">
+                    <Users className="h-5 w-5 shrink-0" />
+                    No team members yet. Invite someone below.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border">
+                    {teamMembers.map((m) => (
+                      <div key={m.id} className="px-5 py-3 flex items-center gap-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{m.email}</p>
+                          <p className="text-xs text-muted-foreground capitalize">{m.role} · {m.status}</p>
+                        </div>
+                        {m.status === 'pending' && (
+                          <span className="text-xs rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-amber-700">Pending</span>
+                        )}
+                        {m.status === 'active' && (
+                          <button
+                            onClick={() => updateTeamStatus(m.id, 'revoked')}
+                            className="text-xs text-muted-foreground hover:text-destructive transition"
+                          >
+                            Revoke
+                          </button>
+                        )}
+                        {m.status === 'revoked' && (
+                          <button
+                            onClick={() => updateTeamStatus(m.id, 'active')}
+                            className="text-xs text-muted-foreground hover:text-primary transition"
+                          >
+                            Re-activate
+                          </button>
+                        )}
+                        <button
+                          onClick={() => removeTeamMember(m.id)}
+                          className="rounded-lg p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="px-5 py-4 border-t bg-muted/20 flex items-center gap-2 flex-wrap">
+                  <input
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && inviteTeamMember()}
+                    type="email"
+                    placeholder="colleague@company.com"
+                    className="h-8 flex-1 min-w-48 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary"
+                  />
+                  <select
+                    value={inviteRole}
+                    onChange={(e) => setInviteRole(e.target.value)}
+                    className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:border-primary"
+                  >
+                    <option value="member">Member</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                  <button
+                    onClick={inviteTeamMember}
+                    disabled={inviting || !inviteEmail.trim()}
+                    className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white transition hover:opacity-90 disabled:opacity-50"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    {inviting ? "Inviting…" : "Invite"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
 
         {feedback && (
@@ -808,21 +1285,30 @@ export default function SettingsPage() {
 
       </div>
 
-      {/* Sticky save bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-white/95 backdrop-blur-sm px-6 py-3">
+      {/* Sticky save bar — hidden on self-saving tabs */}
+      {activeTab !== 'milestones' && activeTab !== 'team' && <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-white/95 backdrop-blur-sm px-6 py-3">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-4">
           <span className="text-xs text-muted-foreground">
-            {dirty ? "You have unsaved changes" : feedback?.type === "success" ? "All changes saved" : "Settings"}
+            {dirty ? "You have unsaved changes" : "Settings"}
           </span>
-          <button
-            onClick={save}
-            disabled={saving || !dirty}
-            className="rounded-xl bg-electric px-6 py-2 text-sm font-bold text-white shadow-sm transition hover:opacity-90 disabled:opacity-50"
-          >
-            {saving ? "Saving…" : "Save Settings"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleCancel}
+              disabled={!dirty || saving}
+              className="rounded-xl border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={save}
+              disabled={saving || !dirty}
+              className="rounded-xl bg-electric px-6 py-2 text-sm font-bold text-white shadow-sm transition hover:opacity-90 disabled:opacity-50"
+            >
+              {saving ? "Saving…" : "Save Settings"}
+            </button>
+          </div>
         </div>
-      </div>
+      </div>}
     </main>
   );
 }

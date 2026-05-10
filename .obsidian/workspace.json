@@ -1,0 +1,252 @@
+{
+  "main": {
+    "id": "dea652f50277d76a",
+    "type": "split",
+    "children": [
+      {
+        "id": "0e345e0ebbecf5ef",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "771aad598c9e37bd",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "local/reports/Archive/SCREENSHOTS_INDEX.md",
+                "mode": "preview",
+                "source": true
+              },
+              "icon": "lucide-file",
+              "title": "SCREENSHOTS_INDEX"
+            }
+          },
+          {
+            "id": "4defc20375fb238d",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "local/reports/ADsettings_admin_implementation_plan.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "ADsettings_admin_implementation_plan"
+            }
+          }
+        ],
+        "currentTab": 1
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "b14b1ebba111f1f3",
+    "type": "split",
+    "children": [
+      {
+        "id": "254aabc53a0eda51",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "2bc3ba6b0dafd88c",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "fc87d303cda5f715",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "149cadbe133f174a",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 511.5
+  },
+  "right": {
+    "id": "8f3c8a3b84276012",
+    "type": "split",
+    "children": [
+      {
+        "id": "000aa5c17adef995",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "8882fb46583d01ba",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "docs/PHASE_2_CHECKLIST.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks for PHASE_2_CHECKLIST"
+            }
+          },
+          {
+            "id": "dcee78eeb63bc5e0",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "docs/PHASE_2_CHECKLIST.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links from PHASE_2_CHECKLIST"
+            }
+          },
+          {
+            "id": "21d87093ea08f459",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "e7196aaf35f980ba",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "c978bd4cd2441f57",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "docs/PHASE_2_CHECKLIST.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of PHASE_2_CHECKLIST"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "4defc20375fb238d",
+  "lastOpenFiles": [
+    "local/reports/ACsettings_data_model_recommendation.md",
+    "local/reports/ADsettings_admin_implementation_plan.md",
+    "local/reports/ABsettings_admin_page_map.md",
+    "local/reports/AAsettings_admin_breakdown.md",
+    "local/reports/BAAnubis_Proposal_Builder_Design_Updated_HTML_Link_PDF_Copy.md",
+    "local/reports/01 settings_admin_phase0_audit.md",
+    "local/reports/02 settings_admin_current_state_inventory.md",
+    "local/reports/04 settings_admin_phase_a_b_plan.md",
+    "local/reports/03 settings_admin_recommended_architecture.md",
+    "local/reports/cloud_services_inventory.md",
+    "local/reports/proposal_builder_design.md",
+    "local/reports/phase3_5_strategy.md",
+    "local/reports/post_phase3_stabilization.md",
+    "local/reports/deferred_implementation.md",
+    "frontend/app/p/[token]/page.tsx",
+    "frontend/app/p/[token]",
+    "frontend/app/p",
+    "frontend/components/proposal/SignatureModal.tsx",
+    "frontend/components/proposal/ProposalClientView.tsx",
+    "backend/routes/publicProposals.js",
+    "backend/migrations/011_proposal_share_links_signatures_versions.sql",
+    "frontend/app/team/accept/page.tsx",
+    "frontend/app/team/accept",
+    "frontend/app/team",
+    "local/reports/Archive/action_button_test_matrix.md",
+    "local/reports/Archive/phase3_planning.md",
+    "local/reports/Archive/proposal_persistence_design.md",
+    "local/reports/Archive/repo_cleanup_package.md",
+    "local/reports/Archive/SCREENSHOTS_INDEX.md",
+    "local/reports/Archive/phase2_9_refinement_plan.md",
+    "local/reports/supabase_inventory.md",
+    "local/PHASE_2_9_PROGRESS.md",
+    "local/reports/Archive/UI_SNAPSHOTS_REVIEW.md",
+    "local/reports/11-page.png",
+    "local/reports/10-page.png",
+    "local/reports/09-page.png",
+    "local/reports/08-page.png",
+    "local/reports/07-page.png",
+    "local/reports/06-page.png",
+    "local/reports/05-page.png",
+    "local/reports/04-page.png",
+    "local/reports/03-page.png",
+    "local/reports/02-page.png",
+    "docs/11_FINAL_IMPLEMENTATION_ORDER.md",
+    "docs/10_SMOKE_TEST_PROMPT.md",
+    "docs/phase1_stabilization_summary.md",
+    "_dump/Untitled.canvas",
+    "obsidian/Architecture Map/AnubisV2 Architecture Canvas.canvas"
+  ]
+}

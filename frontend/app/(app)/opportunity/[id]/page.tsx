@@ -2,19 +2,36 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useCallback } from "react";
+import { toast } from "sonner";
+import { z } from "zod";
 import { apiGet, apiPost, apiPut } from "@/lib/api";
-import type { Job } from "@/types/job";
+import type { Job, ProductionStatus, PaymentStatus, DepositStatus } from "@/types/job";
 import { MILESTONE_ORDER } from "@/types/job";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useMilestones } from "@/lib/milestones-context";
+import Link from "next/link";
+import type { Proposal, PaymentTerm, ContractorProposalSettings } from "@/types/proposal";
+import { listProposalsForJob } from "@/lib/services/proposalService";
+
+// ── Validation schema ─────────────────────────────────────────────────────────
+const opportunitySchema = z.object({
+  customer_name: z.string().min(1, "Customer name is required"),
+  email: z.string().email("Invalid email format").optional().or(z.literal("")),
+  mobile_number_1: z.string().regex(/^\d{10}$|^$/, "Phone must be 10 digits").optional().or(z.literal("")),
+  bid: z.preprocess(
+    (v) => (v === "" || v === undefined ? undefined : parseFloat(String(v).replace(/[^0-9.-]/g, ""))),
+    z.number({ invalid_type_error: "Price must be a number" }).nonnegative("Price cannot be negative").optional()
+  ),
+});
 
 // ── Opportunity components ───────────────────────────────────────────────────
 import { CommandStrip } from "@/components/opportunity/CommandStrip";
 import { QuickActionBar } from "@/components/opportunity/QuickActionBar";
 import { ClientProfileDrawer } from "@/components/opportunity/ClientProfileDrawer";
 import { NoteModal } from "@/components/opportunity/NoteModal";
-import { TaskList } from "@/components/opportunity/TaskList";
 import { ActivityTimeline } from "@/components/opportunity/ActivityTimeline";
 import { InstallmentTracker } from "@/components/opportunity/InstallmentTracker";
+import { PaymentHistory } from "@/components/opportunity/PaymentHistory";
 import { AIAssistantHub } from "@/components/opportunity/AIAssistantHub";
 import { ScopeOfWork } from "@/components/opportunity/ScopeOfWork";
 import { DocumentsSection } from "@/components/opportunity/DocumentsSection";
@@ -28,7 +45,6 @@ import {
   computeNBA,
   computeProgress,
   type ActionType,
-  type UiMessage,
 } from "@/components/opportunity/job-utils";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -81,13 +97,22 @@ export default function OpportunityDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [message, setMessage] = useState<UiMessage>(null);
   const [dirty, setDirty] = useState(false);
   const [nbaDismissed, setNbaDismissed] = useState(false);
   const [nbaSnoozedUntil, setNbaSnoozedUntil] = useState<number | null>(null);
   const [aiTab, setAiTab] = useState("Email");
   const [noteModalOpen, setNoteModalOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // Increment to trigger ActivityTimeline re-fetch after logging an action
+  const [activityRefreshKey, setActivityRefreshKey] = useState(0);
+  // Increment to trigger PaymentHistory re-fetch after a new payment request/mark
+  const [paymentsRefreshKey, setPaymentsRefreshKey] = useState(0);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  // Backend-backed proposals for this opportunity + settings for InstallmentTracker
+  const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [paymentTerms, setPaymentTerms] = useState<PaymentTerm[] | undefined>(undefined);
+  const { milestones } = useMilestones();
 
   // ── Data loading ───────────────────────────────────────────────────────────
   const applyJob = useCallback((data: Job) => {
@@ -122,7 +147,7 @@ export default function OpportunityDashboardPage() {
         if (active) applyJob(data || blankJob);
       } catch (err) {
         console.error(err);
-        if (active) setMessage({ type: "error", text: "Failed to load opportunity." });
+        if (active) toast.error("Failed to load opportunity.");
       } finally {
         if (active) setLoading(false);
       }
@@ -130,6 +155,24 @@ export default function OpportunityDashboardPage() {
     load();
     return () => { active = false; };
   }, [id, applyJob]);
+
+  // Load proposals for this opportunity from backend + payment terms from settings
+  useEffect(() => {
+    if (!id || id === "new") return;
+
+    listProposalsForJob(id)
+      .then((rows) => setProposals(rows))
+      .catch(() => { /* non-fatal — empty state shown */ });
+
+    apiGet<{ base_prompt: string; business_context: string; extra?: Record<string, unknown> }>("/settings")
+      .then((s) => {
+        const ps = (s.extra?.proposal_settings as ContractorProposalSettings | undefined);
+        if (ps?.paymentTerms && ps.paymentTerms.length > 0) {
+          setPaymentTerms(ps.paymentTerms);
+        }
+      })
+      .catch(() => { /* non-fatal — InstallmentTracker has defaults */ });
+  }, [id]);
 
   // ── Field + save handlers ──────────────────────────────────────────────────
   const setField = (field: keyof Job, value: string) => {
@@ -145,12 +188,33 @@ export default function OpportunityDashboardPage() {
   };
 
   const saveJob = async () => {
+    const firstName = (job.first_name || "").trim();
+    const lastName = (job.last_name || "").trim();
+    const customerName = `${firstName} ${lastName}`.trim() || (job.customer_name || "").trim();
+
+    // Zod validation
+    const validation = opportunitySchema.safeParse({
+      customer_name: customerName,
+      email: job.email || "",
+      mobile_number_1: job.mobile_number_1 || "",
+      bid: job.bid || "",
+    });
+
+    if (!validation.success) {
+      const errs: Record<string, string> = {};
+      validation.error.errors.forEach((e) => { errs[e.path[0] as string] = e.message; });
+      setFieldErrors(errs);
+      const firstMsg = validation.error.errors[0]?.message ?? "Please fix the errors below.";
+      toast.error(firstMsg);
+      return;
+    }
+    setFieldErrors({});
+
     try {
       setSaving(true);
-      setMessage(null);
       const payload: Job = {
         ...job,
-        customer_name: `${job.first_name || ""} ${job.last_name || ""}`.trim(),
+        customer_name: customerName,
         address: job.address_1,
         phone: job.mobile_number_1,
       };
@@ -159,11 +223,11 @@ export default function OpportunityDashboardPage() {
         ? await apiPost<Job>("/jobs", payload)
         : await apiPut<Job>(`/jobs/${job.id}`, payload);
       applyJob(data);
-      setMessage({ type: "success", text: "Saved successfully." });
+      toast.success("Opportunity saved.");
       if (isNew && data?.id) router.replace(`/opportunity/${data.id}`);
     } catch (err) {
       console.error(err);
-      setMessage({ type: "error", text: "Failed to save — try again." });
+      toast.error("Failed to save — check your connection.");
     } finally {
       setSaving(false);
     }
@@ -172,21 +236,23 @@ export default function OpportunityDashboardPage() {
   // ── Contact action handler ─────────────────────────────────────────────────
   const runAction = async (type: ActionType) => {
     if (!job.id) {
-      setMessage({ type: "info", text: "Save before logging a contact action." });
+      toast.info("Save the opportunity first before logging an action.");
       return;
     }
+    const labels: Record<string, string> = {
+      email: "Email", text: "Text", call: "Phone call",
+      manual: "Contact", completed: "Completion",
+    };
+    const toastId = toast.loading(`Logging ${labels[type] ?? type}…`);
     try {
       const data = await apiPost<Job>(`/jobs/${job.id}/action`, { type });
       applyJob(data);
-      const labels: Record<string, string> = {
-        email: "Email", text: "Text", call: "Phone Call",
-        manual: "Contact", completed: "Completion",
-      };
-      setMessage({ type: "success", text: `${labels[type] ?? type} logged.` });
+      toast.success(`${labels[type] ?? type} logged.`, { id: toastId });
       setNbaDismissed(false);
+      setActivityRefreshKey((k) => k + 1);
     } catch (err) {
       console.error(err);
-      setMessage({ type: "error", text: "Action failed." });
+      toast.error("Failed to log action — try again.", { id: toastId });
     }
   };
 
@@ -194,12 +260,11 @@ export default function OpportunityDashboardPage() {
   // [AI HOOK] Future: add tone/persona selector before calling generate
   const generateAi = async () => {
     if (!job.scope_of_work?.trim() && !job.service?.trim()) {
-      setMessage({ type: "info", text: "Add service or scope of work first." });
+      toast.info("Add a service or scope of work before generating.");
       return;
     }
     try {
       setGenerating(true);
-      setMessage(null);
       const data = await apiPost<{ followUp: string; upsell: string }>("/generate-job-insights", {
         service: job.service,
         scope_of_work: job.scope_of_work,
@@ -213,10 +278,10 @@ export default function OpportunityDashboardPage() {
         generated_upsell: data.upsell || prev.generated_upsell,
       }));
       setDirty(true);
-      setMessage({ type: "success", text: "AI content generated." });
+      toast.success("AI content generated.");
     } catch (err) {
       console.error(err);
-      setMessage({ type: "error", text: "AI generation failed." });
+      toast.error("AI generation failed — try again.");
     } finally {
       setGenerating(false);
     }
@@ -231,7 +296,10 @@ export default function OpportunityDashboardPage() {
   const risk = useMemo(() => computeRisk(job), [job]);
   const nba = useMemo(() => computeNBA(job), [job]);
   const progress = useMemo(() => computeProgress(job), [job]);
-  const currentMilestoneIdx = MILESTONE_ORDER.indexOf(job.milestone || "Lead");
+  const milestoneLabels = useMemo(() => milestones.map((m) => m.label), [milestones]);
+  const currentMilestoneIdx = milestoneLabels.length > 0
+    ? milestoneLabels.indexOf(job.milestone || "Lead")
+    : MILESTONE_ORDER.indexOf((job.milestone || "Lead") as any);
   const oppId = fallbackOpportunityId(job);
 
   // ── Loading state ──────────────────────────────────────────────────────────
@@ -277,6 +345,7 @@ export default function OpportunityDashboardPage() {
         onLogCall={() => runAction("call")}
         onLogText={() => runAction("text")}
         onLogEmail={() => runAction("email")}
+        fieldErrors={fieldErrors}
       />
 
       <main className="min-h-screen bg-background">
@@ -295,15 +364,14 @@ export default function OpportunityDashboardPage() {
             nbaSnoozed={nbaSnoozed}
             saving={saving}
             dirty={dirty}
-            message={message}
             currentMilestoneIdx={currentMilestoneIdx}
+            milestones={milestoneLabels}
             onSave={saveJob}
             onViewProfile={() => setDrawerOpen(true)}
             onExecuteNba={(action) => runAction(action)}
             onSnoozeNba={snoozeNba}
             onDismissNba={() => setNbaDismissed(true)}
             onMilestoneChange={(m) => setField("milestone", m)}
-            onDismissMessage={() => setMessage(null)}
           />
 
           {/* ── Sticky Quick Action Bar */}
@@ -316,7 +384,7 @@ export default function OpportunityDashboardPage() {
             onGenerate={generateAi}
             onSave={saveJob}
             onMarkContacted={() => runAction("manual")}
-            onRequestPayment={() => setMessage({ type: "info", text: "Payment request logged." })}
+            onRequestPayment={() => runAction("manual")}
             onAddNote={() => setNoteModalOpen(true)}
             onComplete={() => runAction("completed")}
           />
@@ -327,43 +395,236 @@ export default function OpportunityDashboardPage() {
               title="Project Overview"
               subtitle="Track execution, communication, and payments"
             />
-            <div className="grid gap-4 lg:grid-cols-3">
 
-              <Card>
-                <CardHeader title="Task List" icon="✅" />
-                <div className="p-5">
-                  <TaskList />
-                </div>
-              </Card>
+            {/* Activity Timeline */}
+            <Card>
+              <div className="flex items-center gap-2 border-b border-border px-5 py-3">
+                <span className="text-base">🕒</span>
+                <span className="text-sm font-semibold text-foreground">Activity Timeline</span>
+              </div>
+              <div className="px-5 py-4">
+                <ActivityTimeline
+                  jobId={job.id}
+                  lastContactedDate={job.last_contacted_date}
+                  lastContactMethod={job.last_contact_method}
+                  createdAt={job.created_at}
+                  refreshKey={activityRefreshKey}
+                  onAddNote={() => setNoteModalOpen(true)}
+                  onLogCall={() => runAction("call")}
+                  onLogEmail={() => runAction("email")}
+                />
+              </div>
+            </Card>
 
-              <Card>
-                <CardHeader title="Activity Timeline" icon="🕒" />
-                <div className="p-5">
-                  <ActivityTimeline
-                    lastContactedDate={job.last_contacted_date}
-                    lastContactMethod={job.last_contact_method}
-                    createdAt={job.created_at}
-                    onAddNote={() => setNoteModalOpen(true)}
-                    onLogCall={() => runAction("call")}
-                    onLogEmail={() => runAction("email")}
-                  />
-                </div>
-              </Card>
-
+            <div className="mt-4 grid gap-4 lg:grid-cols-2">
               <Card>
                 <CardHeader title="Installment Tracker" icon="💳" />
                 <div className="p-5">
                   <InstallmentTracker
+                    opportunityId={job.id}
                     bid={job.bid}
                     price={job.price}
                     paymentsReceived={job.payments_received}
-                    onRequest={() => runAction("manual")}
+                    paymentTerms={paymentTerms}
+                    onPaymentRequested={() => setPaymentsRefreshKey((k) => k + 1)}
                   />
+                </div>
+              </Card>
+
+              <Card>
+                <CardHeader title="Payment History" icon="📒" />
+                <div className="p-5">
+                  <PaymentHistory
+                    opportunityId={job.id}
+                    refreshKey={paymentsRefreshKey}
+                  />
+                </div>
+              </Card>
+            </div>
+          </section>
+
+          {/* ── Section 1.5: Production & Payment Status ──────────────────────── */}
+          <section>
+            <SectionHeader
+              title="Production & Payment"
+              subtitle="Operational status, blockers, and payment tracking"
+            />
+            <div className="grid gap-4 lg:grid-cols-2">
+
+              {/* Production fields */}
+              <Card>
+                <CardHeader title="Production Status" icon="🏗️" />
+                <div className="grid gap-3 p-5 sm:grid-cols-2">
+                  <div className="space-y-1 sm:col-span-2">
+                    <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide">Status</label>
+                    <select
+                      value={job.production_status || ''}
+                      onChange={(e) => setField('production_status', e.target.value as ProductionStatus)}
+                      className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20"
+                    >
+                      <option value="">— Select status —</option>
+                      {(['Not Scheduled', 'Ready', 'Scheduled', 'In Progress', 'Blocked', 'Complete'] as ProductionStatus[]).map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide">Assigned PM / Owner</label>
+                    <input
+                      type="text"
+                      value={job.production_owner || ''}
+                      onChange={(e) => setField('production_owner', e.target.value)}
+                      placeholder="e.g. Mike Torres"
+                      className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide">Scheduled Date</label>
+                    <input
+                      type="date"
+                      value={job.scheduled_date || ''}
+                      onChange={(e) => setField('scheduled_date', e.target.value)}
+                      className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20"
+                    />
+                  </div>
+                  {job.production_status === 'Blocked' && (
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="block text-xs font-medium text-red-600 uppercase tracking-wide">Blocker Reason</label>
+                      <input
+                        type="text"
+                        value={job.production_blocker || ''}
+                        onChange={(e) => setField('production_blocker', e.target.value)}
+                        placeholder="Describe what is blocking this job"
+                        className="h-9 w-full rounded-lg border border-red-300 bg-red-50 px-3 text-sm outline-none transition focus:border-red-400 focus:ring-1 focus:ring-red-200"
+                      />
+                    </div>
+                  )}
+                </div>
+              </Card>
+
+              {/* Payment status fields */}
+              <Card>
+                <CardHeader title="Payment Status" icon="💰" />
+                <div className="grid gap-3 p-5 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide">Payment Status</label>
+                    <select
+                      value={job.payment_status || ''}
+                      onChange={(e) => setField('payment_status', e.target.value as PaymentStatus)}
+                      className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20"
+                    >
+                      <option value="">— Select status —</option>
+                      {(['Not Started', 'Deposit Pending', 'Deposit Paid', 'In Progress', 'Overdue', 'Paid In Full'] as PaymentStatus[]).map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide">Deposit Status</label>
+                    <select
+                      value={job.deposit_status || ''}
+                      onChange={(e) => setField('deposit_status', e.target.value as DepositStatus)}
+                      className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20"
+                    >
+                      <option value="">— Select —</option>
+                      {(['N/A', 'Pending', 'Paid'] as DepositStatus[]).map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide">Balance Due</label>
+                    <input
+                      type="text"
+                      value={String(job.balance_due || '')}
+                      onChange={(e) => setField('balance_due', e.target.value)}
+                      placeholder="0.00"
+                      className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide">Due Date</label>
+                    <input
+                      type="date"
+                      value={job.due_date || ''}
+                      onChange={(e) => setField('due_date', e.target.value)}
+                      className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20"
+                    />
+                  </div>
+                  {job.payment_status === 'Overdue' && (
+                    <div className="sm:col-span-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                      ⚠️ This job has an overdue payment. Follow up with the client to collect balance.
+                    </div>
+                  )}
                 </div>
               </Card>
 
             </div>
           </section>
+
+          {/* ── Section 1.8: Proposals ───────────────────────────────────────── */}
+          {id && id !== "new" && (
+            <section>
+              <SectionHeader
+                title="Proposals"
+                subtitle="Drafts and sent proposals for this opportunity"
+              />
+              <Card>
+                <div className="flex items-center justify-between border-b border-border px-5 py-3">
+                  <span className="text-sm font-semibold text-foreground">
+                    Proposals {proposals.length > 0 && <span className="text-muted-foreground font-normal">({proposals.length})</span>}
+                  </span>
+                  <Link
+                    href={`/proposal?jobId=${id}`}
+                    className="rounded-lg bg-electric px-3 py-1.5 text-xs font-bold text-white transition hover:opacity-90"
+                  >
+                    + Create Proposal
+                  </Link>
+                </div>
+                <div className="px-5 py-4">
+                  {proposals.length > 0 ? (
+                    <ul className="space-y-2">
+                      {proposals.map((p) => (
+                        <li key={p.id}>
+                          <Link
+                            href={`/proposal?proposalId=${p.id}`}
+                            className="flex items-center justify-between rounded-xl border border-border bg-muted/20 px-4 py-3 transition hover:border-primary/40 hover:bg-primary/5"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">
+                                {p.title || p.proposalNumber || "Untitled Proposal"}
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                <span className={`font-medium ${
+                                  p.status === 'approved' ? 'text-green-700'
+                                  : p.status === 'sent' ? 'text-primary'
+                                  : p.status === 'declined' || p.status === 'expired' ? 'text-red-600'
+                                  : 'text-muted-foreground'
+                                }`}>
+                                  {p.status.charAt(0).toUpperCase() + p.status.slice(1)}
+                                </span>
+                                {" · "}
+                                Updated {p.updatedAt ? new Date(p.updatedAt).toLocaleDateString() : "—"}
+                                {p.total ? ` · $${Number(p.total).toLocaleString()}` : ""}
+                              </p>
+                            </div>
+                            <span className="shrink-0 ml-4 text-xs text-primary">Open →</span>
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      No proposals yet for this opportunity.{" "}
+                      <Link href={`/proposal?jobId=${id}`} className="text-primary hover:underline">
+                        Create one →
+                      </Link>
+                    </p>
+                  )}
+                </div>
+              </Card>
+            </section>
+          )}
 
           {/* ── Section 2: Proposal Builder ──────────────────────────────────── */}
           <section>

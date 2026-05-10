@@ -80,6 +80,9 @@ export interface Proposal {
   jobId?: string
   proposalNumber: string
   title: string
+  customerName: string
+  customerEmail: string
+  expiresAt?: string
   serviceType: string
   milestone: string
   status: ProposalStatus

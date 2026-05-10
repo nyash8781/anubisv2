@@ -1,6 +1,8 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { toast } from 'sonner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { apiGet } from '@/lib/api'
 import { ProposalStatusBar } from '@/components/proposal/ProposalStatusBar'
@@ -10,15 +12,14 @@ import { BillOfMaterialsCard } from '@/components/proposal/BillOfMaterialsCard'
 import { PricingSummaryCard } from '@/components/proposal/PricingSummaryCard'
 import { DocumentsCard } from '@/components/proposal/DocumentsCard'
 import { ProposalPreviewModal } from '@/components/proposal/ProposalPreviewModal'
+import { SendModal } from '@/components/proposal/SendModal'
 import {
   loadProposal,
   saveProposal,
+  transitionProposalStatus,
+  migrateLegacyLocalStorageDrafts,
 } from '@/lib/services/proposalService'
-import {
-  loadBOMItems,
-  saveBOMItems,
-  createDefaultBOMItem,
-} from '@/lib/services/bomService'
+import { createDefaultBOMItem } from '@/lib/services/bomService'
 import { loadDocuments, saveDocuments } from '@/lib/services/proposalDocumentService'
 import {
   mergeProposalSettings,
@@ -27,6 +28,7 @@ import {
 import { calculatePricing, recalcItem } from '@/lib/services/pricingService'
 import type {
   Proposal,
+  ProposalStatus,
   BOMItem,
   BOMItemCategory,
   ProposalDocument,
@@ -100,14 +102,22 @@ function parseAIBOMOutput(output: string, offset: number): BOMItem[] {
 // ─────────────────────────────────────────────
 
 export default function ProposalPage() {
+  const searchParams = useSearchParams()
+  const proposalIdParam = searchParams?.get('proposalId') ?? undefined
+  const jobIdParam = searchParams?.get('jobId') ?? undefined
+
   const [proposal, setProposal] = useState<Proposal | null>(null)
   const [bomItems, setBomItems] = useState<BOMItem[]>([])
   const [documents, setDocuments] = useState<ProposalDocument[]>([])
   const [proposalSettings, setProposalSettings] =
     useState<ContractorProposalSettings>(DEFAULT_PROPOSAL_SETTINGS)
   const [showPreview, setShowPreview] = useState(false)
+  const [showSend, setShowSend] = useState(false)
   const [saving, setSaving] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  const [isNewProposal, setIsNewProposal] = useState(true)
+  const [isDirty, setIsDirty] = useState(false)
+  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Compute pricing live from BOM + proposal tax/discount settings
   const pricing = useMemo(
@@ -123,24 +133,35 @@ export default function ProposalPage() {
 
   // ── Load on mount ──────────────────────────
   useEffect(() => {
+    let active = true
     async function load() {
+      // Best-effort one-shot migration of any legacy localStorage drafts.
       try {
-        const p = await loadProposal()
-        setProposal(p)
+        const r = await migrateLegacyLocalStorageDrafts()
+        if (r.migrated > 0) {
+          toast.success(`Migrated ${r.migrated} local draft${r.migrated === 1 ? '' : 's'} to your account.`)
+        }
+      } catch { /* non-fatal */ }
 
-        const [items, docs] = await Promise.all([
-          loadBOMItems(p.id),
-          loadDocuments(p.id),
-        ])
-        setBomItems(items)
+      try {
+        const result = await loadProposal({ proposalId: proposalIdParam, jobId: jobIdParam })
+        if (!active) return
+        setProposal(result.proposal)
+        setBomItems(result.items)
+        setIsNewProposal(result.isNew)
+
+        const docs = await loadDocuments(result.proposal.id).catch(() => [])
+        if (!active) return
         setDocuments(docs)
-      } catch {
-        // Graceful fallback — loadProposal always returns a default
+      } catch (err) {
+        console.error('Failed to load proposal:', err)
+        toast.error('Failed to load proposal — try again.')
       }
 
       // Load proposal settings from the backend settings API (stored in extra JSONB)
       try {
         const remote = await apiGet<{ extra?: Record<string, unknown> }>('/settings')
+        if (!active) return
         const ps = mergeProposalSettings(
           remote.extra?.proposal_settings as ContractorProposalSettings | undefined
         )
@@ -149,17 +170,25 @@ export default function ProposalPage() {
         // Settings unavailable — use defaults, no crash
       }
 
-      setLoaded(true)
+      if (active) setLoaded(true)
     }
     load()
-  }, [])
+    return () => { active = false }
+  }, [proposalIdParam, jobIdParam])
 
   // ── Handlers ──────────────────────────────
   function updateProposal(updates: Partial<Proposal>) {
     setProposal((prev) =>
       prev ? { ...prev, ...updates, updatedAt: new Date().toISOString() } : prev
     )
+    setIsDirty(true)
   }
+
+  // Wrapper that flips isDirty on every BOM change
+  const updateBomItems: React.Dispatch<React.SetStateAction<BOMItem[]>> = useCallback((next) => {
+    setBomItems(next)
+    setIsDirty(true)
+  }, [])
 
   function handleAIApply(
     target: 'scope' | 'assumptions' | 'exclusions' | 'bom',
@@ -182,7 +211,7 @@ export default function ProposalPage() {
     } else if (target === 'bom') {
       const newItems = parseAIBOMOutput(content, bomItems.length)
       if (newItems.length > 0) {
-        setBomItems((prev) => [...prev, ...newItems])
+        updateBomItems((prev) => [...prev, ...newItems])
       }
     }
   }
@@ -194,20 +223,88 @@ export default function ProposalPage() {
     // TODO: implement scroll-to-AI-hub + pre-select action
   }
 
-  async function handleSave() {
-    if (!proposal) return
+  const handleSave = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!proposal || saving) return
     setSaving(true)
+    const toastId = opts?.silent ? null : toast.loading('Saving proposal…')
     try {
-      const saved = await saveProposal(proposal)
-      setProposal(saved)
-      await Promise.all([
-        saveBOMItems(bomItems, saved.id),
-        saveDocuments(documents, saved.id),
-      ])
+      const result = await saveProposal(proposal, bomItems, { isNew: isNewProposal })
+      setProposal(result.proposal)
+      setBomItems(result.items)
+      setIsNewProposal(false)
+      setIsDirty(false)
+      await saveDocuments(documents, result.proposal.id).catch(() => { /* documents not yet wired to backend */ })
+      if (toastId !== null) toast.success('Proposal saved.', { id: toastId })
+    } catch (err) {
+      console.error('Save proposal failed:', err)
+      if (toastId !== null) toast.error('Failed to save proposal — please try again.', { id: toastId })
+      // Don't clear isDirty — let user retry
     } finally {
       setSaving(false)
     }
+  }, [proposal, bomItems, documents, isNewProposal, saving])
+
+  async function handleTransition(status: ProposalStatus) {
+    if (!proposal) return
+    if (isNewProposal || isDirty) {
+      // Save first so the backend has the latest content
+      try {
+        await handleSave({ silent: true })
+      } catch { return }
+    }
+    const toastId = toast.loading(`Updating status to ${status}…`)
+    try {
+      const updated = await transitionProposalStatus(proposal.id, status)
+      setProposal(updated)
+      setIsDirty(false)
+      toast.success(`Proposal marked as ${status}.`, { id: toastId })
+    } catch (err) {
+      console.error('Status transition failed:', err)
+      toast.error(`Failed to update status — please try again.`, { id: toastId })
+    }
   }
+
+  function handleSend() {
+    if (!proposal) return
+    if (isNewProposal) {
+      toast.info('Save the proposal once before sending.')
+      return
+    }
+    if (isDirty) {
+      // Best practice: save before send. The send modal also surfaces this.
+      handleSave({ silent: true })
+    }
+    setShowSend(true)
+  }
+
+  // Autosave: 3s debounce. Skips when:
+  //   - proposal isn't loaded
+  //   - proposal is brand new (no server id yet — explicit save creates it)
+  //   - status is locked (approved/declined/expired)
+  //   - already saving
+  //   - nothing dirty
+  useEffect(() => {
+    if (!loaded || !proposal || isNewProposal) return
+    if (proposal.status === 'approved' || proposal.status === 'declined' || proposal.status === 'expired') return
+    if (!isDirty || saving) return
+
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
+    autosaveTimer.current = setTimeout(() => {
+      handleSave({ silent: true })
+    }, 3000)
+
+    return () => {
+      if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
+    }
+  }, [proposal, bomItems, isDirty, saving, isNewProposal, loaded, handleSave])
+
+  // Warn before unloading with unsaved changes
+  useEffect(() => {
+    if (!isDirty) return
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [isDirty])
 
   function handleMarkReady() {
     updateProposal({ status: 'ready' })
@@ -257,9 +354,12 @@ export default function ProposalPage() {
           proposal={proposal}
           documents={documents}
           pricing={pricing}
-          onPreview={() => setShowPreview(true)}
-          onSave={handleSave}
           saving={saving}
+          isDirty={isDirty}
+          onPreview={() => setShowPreview(true)}
+          onSave={() => handleSave()}
+          onSend={handleSend}
+          onTransition={handleTransition}
         />
 
         {/* ── AI Assistant Hub ── */}
@@ -280,7 +380,7 @@ export default function ProposalPage() {
         {/* ── Bill of Materials ── */}
         <BillOfMaterialsCard
           items={bomItems}
-          onChange={setBomItems}
+          onChange={updateBomItems}
           onRequestAI={() => handleRequestAI('generate_bom')}
         />
 
@@ -310,6 +410,19 @@ export default function ProposalPage() {
         proposalSettings={proposalSettings}
         pricing={pricing}
         onMarkReady={handleMarkReady}
+      />
+
+      {/* ── Send Modal (DEFERRED: real email/PDF in Phase 4) ── */}
+      <SendModal
+        open={showSend}
+        proposal={proposal}
+        total={pricing.total}
+        isDirty={isDirty}
+        onClose={() => setShowSend(false)}
+        onSent={(updated) => {
+          setProposal(updated)
+          setIsDirty(false)
+        }}
       />
     </main>
   )

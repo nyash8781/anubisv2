@@ -1,8 +1,6 @@
 import type { BOMItem, BOMItemCategory, BOMItemSource, BOMItemConfidence } from '@/types/proposal'
 import { recalcItem } from './pricingService'
 
-const STORAGE_KEY = 'anubis_bom_items'
-
 export function createDefaultBOMItem(sortOrder: number): BOMItem {
   return {
     id: crypto.randomUUID(),
@@ -70,32 +68,9 @@ export function duplicateItem(items: BOMItem[], id: string): BOMItem[] {
   return [...items, clone]
 }
 
-// Load BOM items from localStorage (dev fallback)
-// TODO (Option C): Replace with Supabase query on `proposal_bom_items` table
-export async function loadBOMItems(proposalId?: string): Promise<BOMItem[]> {
-  try {
-    const key = proposalId ? `${STORAGE_KEY}_${proposalId}` : STORAGE_KEY
-    const raw = localStorage.getItem(key)
-    if (raw) return JSON.parse(raw) as BOMItem[]
-  } catch {
-    // localStorage unavailable or parse error
-  }
-  return []
-}
-
-// Save BOM items to localStorage (dev fallback)
-// TODO (Option C): Replace with Supabase upsert on `proposal_bom_items` table
-export async function saveBOMItems(
-  items: BOMItem[],
-  proposalId?: string
-): Promise<void> {
-  try {
-    const key = proposalId ? `${STORAGE_KEY}_${proposalId}` : STORAGE_KEY
-    localStorage.setItem(key, JSON.stringify(items))
-  } catch {
-    // localStorage unavailable
-  }
-}
+// Note: BOM persistence is handled atomically by proposalService.saveProposal —
+// items travel with the proposal in a single backend round-trip. The legacy
+// load/save helpers that read/wrote localStorage are gone.
 
 export const BOM_CATEGORY_LABELS: Record<BOMItemCategory, string> = {
   material: 'Material',
