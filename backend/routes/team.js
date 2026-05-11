@@ -1,14 +1,28 @@
 const { Router } = require('express');
 const { requireAuth } = require('../middleware/auth');
 const { getDb, useSupabase } = require('../db/index');
+const { supabaseServiceClient } = require('../db/client');
 const { isServiceConfigured, env } = require('../config/env');
 const logger = require('../lib/logger');
+const usageService = require('../services/usageService');
+const entitlementService = require('../services/entitlementService');
 
 // Admin store handles (no per-user filter — used for invite acceptance where
 // the invitee's user_id differs from the admin who created the invite).
 const adminStore = useSupabase
   ? require('../db/supabaseStore')
   : require('../db/jsonStore');
+
+// Helper: Get organization ID for a user
+async function getOrganizationIdForUser(userId) {
+  if (!supabaseServiceClient || !userId) return null;
+  const { data } = await supabaseServiceClient
+    .from('organizations')
+    .select('id')
+    .eq('owner_user_id', userId)
+    .single();
+  return data?.id || null;
+}
 
 const router = Router();
 
@@ -82,6 +96,47 @@ router.post('/invite', requireAuth, async (req, res) => {
   const normalizedEmail = email.trim().toLowerCase();
   const db = getDb(req.user.id);
   try {
+    // Get organization ID for usage tracking and limit enforcement (Phase E)
+    const organizationId = await getOrganizationIdForUser(req.user.id);
+
+    // Check team members seat limit (Phase E)
+    if (organizationId) {
+      const seatCheck = await entitlementService.checkUsageLimit(
+        organizationId,
+        'team_members',
+        1
+      );
+      if (!seatCheck.allowed) {
+        return res.status(402).json({
+          error: 'Team member limit reached',
+          reason: seatCheck.reason,
+          used: seatCheck.used,
+          limit: seatCheck.limit,
+          plan: seatCheck.planName,
+          upgradeUrl: seatCheck.upgradeUrl,
+        });
+      }
+    }
+
+    // Check email sending limit for invitation (Phase E)
+    if (organizationId) {
+      const emailCheck = await entitlementService.checkUsageLimit(
+        organizationId,
+        'emails_sent',
+        1
+      );
+      if (!emailCheck.allowed) {
+        return res.status(402).json({
+          error: 'Email sending limit reached',
+          reason: emailCheck.reason,
+          used: emailCheck.used,
+          limit: emailCheck.limit,
+          plan: emailCheck.planName,
+          upgradeUrl: emailCheck.upgradeUrl,
+        });
+      }
+    }
+
     const member = await db.inviteTeamMember(normalizedEmail, role || 'member');
 
     // Best-effort invite email send. Gracefully no-ops when Resend isn't configured.
@@ -122,6 +177,20 @@ router.post('/invite', requireAuth, async (req, res) => {
           text: `You've been invited to ${businessName} on Anubis. Accept here: ${acceptUrl}`,
         });
         emailSent = true;
+
+        // Log usage events (fire-and-forget, Phase E)
+        if (organizationId) {
+          usageService.log(organizationId, req.user.id, 'email_sent', {
+            count: 1,
+            template: 'team_invite',
+            invitee_email: normalizedEmail,
+          });
+
+          usageService.log(organizationId, req.user.id, 'team_member_invited', {
+            email: normalizedEmail,
+            role: role || 'member',
+          });
+        }
       } catch (err) {
         logger.error({ err }, 'Resend invite email send failed (invite row was still created)');
         emailError = err.message;
@@ -130,6 +199,14 @@ router.post('/invite', requireAuth, async (req, res) => {
       // DEFERRED: team.invite.email
       // See local/reports/deferred_implementation.md
       logger.warn('[DEFERRED team.invite.email] Resend not configured — invite created without email');
+
+      // Still log team member invitation even if email not sent (Phase E)
+      if (organizationId) {
+        usageService.log(organizationId, req.user.id, 'team_member_invited', {
+          email: normalizedEmail,
+          role: role || 'member',
+        });
+      }
     }
 
     res.status(201).json({

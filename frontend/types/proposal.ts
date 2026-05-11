@@ -211,17 +211,10 @@ export interface PaymentTerm {
   dueTrigger: string
 }
 
-export interface BusinessProfile {
-  companyName: string
-  contactName: string
-  email: string
-  phone: string
-  website: string
-  businessAddress: string
-  licenseNumber: string
-  insuranceInfo: string
-  logoUrl: string
-}
+// Note: BusinessProfile fields moved to top-level user_settings
+// See settings page "Company Profile" tab fields:
+// business_name, company_contact_name, company_phone, company_email,
+// website, company_address, license_number, insurance_info, contractor_logo
 
 export interface ProposalBranding {
   templateStyle: ProposalTemplateStyle
@@ -268,7 +261,6 @@ export interface AIPromptSettings {
 }
 
 export interface ContractorProposalSettings {
-  businessProfile: BusinessProfile
   branding: ProposalBranding
   paymentTerms: PaymentTerm[]
   taxSettings: TaxSettings

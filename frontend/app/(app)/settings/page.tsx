@@ -8,6 +8,7 @@ import { mergeProposalSettings, DEFAULT_PROPOSAL_SETTINGS } from "@/lib/services
 import { toast } from "sonner";
 import { z } from "zod";
 import { useMilestones, type MilestoneRow } from "@/lib/milestones-context";
+import UpgradeModal from "@/components/settings/UpgradeModal";
 import type {
   ContractorProposalSettings,
   PaymentTerm,
@@ -27,6 +28,7 @@ type Settings = {
   company_address: string;
   website: string;
   license_number: string;
+  insurance_info: string;
   tagline: string;
   tone: string;
   personalization_level: string;
@@ -57,10 +59,6 @@ type Settings = {
   preferred_contact_window: string;
   default_new_status: string;
   default_new_milestone: string;
-  stale_lead_days: string;
-  stale_site_visit_days: string;
-  stale_proposal_days: string;
-  stale_construction_days: string;
   aging_threshold_days: string;
   auto_mark_contacted_email: boolean;
   auto_mark_contacted_text: boolean;
@@ -82,6 +80,7 @@ const defaults: Settings = {
   company_address: "",
   website: "",
   license_number: "",
+  insurance_info: "",
   tagline: "",
   tone: "Professional",
   personalization_level: "Medium",
@@ -112,10 +111,6 @@ const defaults: Settings = {
   preferred_contact_window: "",
   default_new_status: "Draft",
   default_new_milestone: "Lead",
-  stale_lead_days: "30",
-  stale_site_visit_days: "14",
-  stale_proposal_days: "30",
-  stale_construction_days: "14",
   aging_threshold_days: "60",
   auto_mark_contacted_email: true,
   auto_mark_contacted_text: true,
@@ -143,10 +138,6 @@ const aiCommsValidationSchema = z.object({
 });
 
 const pipelineValidationSchema = z.object({
-  stale_lead_days: z.string().regex(/^\d+$/, "Must be a number").optional().or(z.literal("")),
-  stale_site_visit_days: z.string().regex(/^\d+$/, "Must be a number").optional().or(z.literal("")),
-  stale_proposal_days: z.string().regex(/^\d+$/, "Must be a number").optional().or(z.literal("")),
-  stale_construction_days: z.string().regex(/^\d+$/, "Must be a number").optional().or(z.literal("")),
   aging_threshold_days: z.string().regex(/^\d+$/, "Must be a number").optional().or(z.literal("")),
 });
 
@@ -356,7 +347,7 @@ function PaymentTermsEditor({
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
-type SettingsTab = 'business' | 'ai-comms' | 'pipeline' | 'proposal' | 'milestones' | 'team';
+type SettingsTab = 'business' | 'ai-comms' | 'pipeline' | 'proposal' | 'milestones' | 'team' | 'integrations' | 'usage-plan';
 
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: 'business', label: 'Business' },
@@ -365,6 +356,8 @@ const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: 'proposal', label: 'Proposal' },
   { id: 'milestones', label: 'Milestones' },
   { id: 'team', label: 'Team' },
+  { id: 'integrations', label: 'Integrations' },
+  { id: 'usage-plan', label: 'Usage & Plan' },
 ];
 
 type TeamMember = {
@@ -399,6 +392,21 @@ export default function SettingsPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("member");
   const [inviting, setInviting] = useState(false);
+
+  // Integrations tab
+  const [integrations, setIntegrations] = useState<Record<string, boolean>>({});
+  const [integrationsLoading, setIntegrationsLoading] = useState(false);
+
+  // Usage & Plan tab
+  type UsageData = {
+    plan: { name: string; slug: string; priceMonthly: number; startedAt: string } | null;
+    usage: Array<{ metricKey: string; used: number; limit: number; percentage: number }>;
+    renewalDate: string | null;
+  };
+  const [usageData, setUsageData] = useState<UsageData | null>(null);
+  const [usageLoading, setUsageLoading] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [limitedMetrics, setLimitedMetrics] = useState<string[]>([]);
 
   const loadTeam = useCallback(async () => {
     setTeamLoading(true);
@@ -436,8 +444,48 @@ export default function SettingsPage() {
       .finally(() => setLoading(false));
   };
 
+  const loadIntegrations = useCallback(async () => {
+    setIntegrationsLoading(true);
+    try {
+      const data = await apiGet<{ status: Record<string, { available: boolean }> }>('/');
+      const integrationStatus = data.status || {};
+      setIntegrations({
+        resend: integrationStatus.resend?.available || false,
+        stripe: integrationStatus.stripe?.available || false,
+        twilio: integrationStatus.twilio?.available || false,
+        r2: integrationStatus.r2?.available || false,
+      });
+    } catch {
+      toast.error("Failed to load integration status.");
+    } finally {
+      setIntegrationsLoading(false);
+    }
+  }, []);
+
+  const loadUsage = useCallback(async () => {
+    setUsageLoading(true);
+    try {
+      const data = await apiGet<UsageData>('/settings/usage');
+      setUsageData(data);
+
+      const limited = data.usage
+        .filter(m => m.percentage >= 80)
+        .map(m => m.metricKey);
+      setLimitedMetrics(limited);
+      if (limited.length > 0) {
+        setShowUpgradeModal(true);
+      }
+    } catch {
+      toast.error("Failed to load usage data.");
+    } finally {
+      setUsageLoading(false);
+    }
+  }, []);
+
   useEffect(() => { load(); }, []);
   useEffect(() => { if (activeTab === 'team') loadTeam(); }, [activeTab, loadTeam]);
+  useEffect(() => { if (activeTab === 'integrations') loadIntegrations(); }, [activeTab, loadIntegrations]);
+  useEffect(() => { if (activeTab === 'usage-plan') loadUsage(); }, [activeTab, loadUsage]);
 
   function upd<K extends keyof Settings>(key: K, value: Settings[K]) {
     setS((prev) => ({ ...prev, [key]: value }));
@@ -485,10 +533,6 @@ export default function SettingsPage() {
       }
     } else if (tab === 'pipeline') {
       const result = pipelineValidationSchema.safeParse({
-        stale_lead_days: s.stale_lead_days,
-        stale_site_visit_days: s.stale_site_visit_days,
-        stale_proposal_days: s.stale_proposal_days,
-        stale_construction_days: s.stale_construction_days,
         aging_threshold_days: s.aging_threshold_days,
       });
       if (!result.success) {
@@ -696,6 +740,9 @@ export default function SettingsPage() {
               <TextInput label="Address" value={str("company_address")} onChange={(v) => upd("company_address", v)} placeholder="123 Main St, Phoenix, AZ 85001" />
             </Full>
             <Full>
+              <TextInput label="Insurance Info" value={str("insurance_info")} onChange={(v) => upd("insurance_info", v)} placeholder="General Liability: $2M / Workers Comp: Acme Insurance" />
+            </Full>
+            <Full>
               <TextInput label="Tagline" value={str("tagline")} onChange={(v) => upd("tagline", v)} placeholder="Built right. Built to last." />
             </Full>
             <Full>
@@ -826,73 +873,12 @@ export default function SettingsPage() {
             </p>
           </div>
 
-          {/* ── Proposal — Business Profile ── */}
-          <Section title="Proposal — Business Profile" description="Company info that auto-populates proposals. Keep in sync with Business Identity above.">
+          {/* ── Company Info Note ── */}
+          <Section title="Company Information" description="Your company details for proposals are now configured in the Business tab. Any business profile information you set there will automatically appear in your proposals.">
             <Full>
-              <TextInput
-                label="Company Name"
-                hint="Shown at the top of every proposal"
-                value={ps.businessProfile.companyName}
-                onChange={(v) => updPS("businessProfile", { ...ps.businessProfile, companyName: v })}
-                placeholder="Apex Roofing & Construction"
-              />
-            </Full>
-            <TextInput
-              label="Contact Name"
-              value={ps.businessProfile.contactName}
-              onChange={(v) => updPS("businessProfile", { ...ps.businessProfile, contactName: v })}
-              placeholder="John Smith"
-            />
-            <TextInput
-              label="Email"
-              type="email"
-              value={ps.businessProfile.email}
-              onChange={(v) => updPS("businessProfile", { ...ps.businessProfile, email: v })}
-              placeholder="info@apexroofing.com"
-            />
-            <TextInput
-              label="Phone"
-              type="tel"
-              value={ps.businessProfile.phone}
-              onChange={(v) => updPS("businessProfile", { ...ps.businessProfile, phone: v })}
-              placeholder="(602) 555-0100"
-            />
-            <TextInput
-              label="Website"
-              value={ps.businessProfile.website}
-              onChange={(v) => updPS("businessProfile", { ...ps.businessProfile, website: v })}
-              placeholder="https://apexroofing.com"
-            />
-            <TextInput
-              label="License Number"
-              value={ps.businessProfile.licenseNumber}
-              onChange={(v) => updPS("businessProfile", { ...ps.businessProfile, licenseNumber: v })}
-              placeholder="ROC-123456"
-            />
-            <Full>
-              <TextInput
-                label="Business Address"
-                value={ps.businessProfile.businessAddress}
-                onChange={(v) => updPS("businessProfile", { ...ps.businessProfile, businessAddress: v })}
-                placeholder="123 Main St, Phoenix, AZ 85001"
-              />
-            </Full>
-            <Full>
-              <TextInput
-                label="Insurance Info"
-                value={ps.businessProfile.insuranceInfo}
-                onChange={(v) => updPS("businessProfile", { ...ps.businessProfile, insuranceInfo: v })}
-                placeholder="General Liability: $2M / Workers Comp: Acme Insurance"
-              />
-            </Full>
-            <Full>
-              <TextInput
-                label="Logo URL"
-                hint="Direct link to logo image (shown in proposal header)"
-                value={ps.businessProfile.logoUrl}
-                onChange={(v) => updPS("businessProfile", { ...ps.businessProfile, logoUrl: v })}
-                placeholder="https://..."
-              />
+              <div className="text-xs text-muted-foreground">
+                Update your business name, contact info, logo, and other company details in the <span className="font-medium text-foreground">Business</span> tab above.
+              </div>
             </Full>
           </Section>
 
@@ -1273,6 +1259,142 @@ export default function SettingsPage() {
             </div>
           )}
 
+          {/* ── Integrations tab ── */}
+          {activeTab === 'integrations' && (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-border bg-white overflow-hidden">
+                <div className="px-5 py-4 border-b">
+                  <p className="text-sm font-semibold text-foreground">Integrations</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">Connect external services to unlock more features.</p>
+                </div>
+                {integrationsLoading ? (
+                  <div className="px-5 py-6 text-sm text-muted-foreground">Loading integrations…</div>
+                ) : (
+                  <div className="grid gap-3 p-5 sm:grid-cols-2">
+                    {[
+                      { key: 'resend', label: 'Resend', description: 'Email delivery service' },
+                      { key: 'stripe', label: 'Stripe', description: 'Payments & invoicing' },
+                      { key: 'twilio', label: 'Twilio', description: 'SMS & voice calls' },
+                      { key: 'r2', label: 'Cloudflare R2', description: 'Document storage' },
+                    ].map(({ key, label, description }) => (
+                      <div key={key} className="rounded-xl border border-border bg-background p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-foreground">{label}</p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {integrations[key] ? (
+                              <span className="flex items-center gap-1 rounded-full border border-green-300 bg-green-50 px-2 py-0.5 text-xs text-green-700">
+                                <Check className="h-3 w-3" />
+                                Connected
+                              </span>
+                            ) : (
+                              <span className="rounded-full border border-border bg-muted/30 px-2 py-0.5 text-xs text-muted-foreground">
+                                Not configured
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Usage & Plan tab ── */}
+          {activeTab === 'usage-plan' && (
+            <div className="space-y-4">
+              {usageLoading ? (
+                <div className="rounded-2xl border border-border bg-white p-6 text-sm text-muted-foreground">Loading usage data…</div>
+              ) : usageData ? (
+                <>
+                  {/* Plan Overview Card */}
+                  {usageData.plan && (
+                    <div className="rounded-2xl border border-border bg-gradient-to-br from-primary/5 to-primary/2 p-6">
+                      <div className="grid gap-4 sm:grid-cols-3">
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Current Plan</p>
+                          <p className="mt-1 text-lg font-semibold text-foreground">{usageData.plan.name}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Monthly Price</p>
+                          <p className="mt-1 text-lg font-semibold text-foreground">${(usageData.plan.priceMonthly / 100).toFixed(2)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Renews</p>
+                          <p className="mt-1 text-lg font-semibold text-foreground">
+                            {usageData.renewalDate ? new Date(usageData.renewalDate).toLocaleDateString() : '—'}
+                          </p>
+                        </div>
+                      </div>
+                      <button className="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:opacity-90">
+                        Upgrade Plan
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Usage Metrics */}
+                  <div className="rounded-2xl border border-border bg-white overflow-hidden">
+                    <div className="px-5 py-4 border-b">
+                      <p className="text-sm font-semibold text-foreground">Usage This Month</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">Current consumption against your plan limits.</p>
+                    </div>
+                    {usageData.usage.length === 0 ? (
+                      <div className="px-5 py-6 text-sm text-muted-foreground">No usage recorded this month.</div>
+                    ) : (
+                      <div className="divide-y divide-border">
+                        {usageData.usage.map((metric) => {
+                          const isUnlimited = metric.limit === -1;
+                          const isCritical = metric.percentage >= 90;
+                          const isWarning = metric.percentage >= 80;
+
+                          return (
+                            <div key={metric.metricKey} className="px-5 py-4 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <p className="text-sm font-medium text-foreground capitalize">
+                                  {metric.metricKey.replace(/_/g, ' ')}
+                                </p>
+                                <p className={`text-xs font-semibold ${
+                                  isCritical ? 'text-red-600' : isWarning ? 'text-amber-600' : 'text-muted-foreground'
+                                }`}>
+                                  {metric.used} / {isUnlimited ? '∞' : metric.limit}
+                                </p>
+                              </div>
+                              {!isUnlimited && (
+                                <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                                  <div
+                                    className={`h-full transition-all ${
+                                      isCritical ? 'bg-red-500' : isWarning ? 'bg-amber-500' : 'bg-primary'
+                                    }`}
+                                    style={{ width: `${Math.min(metric.percentage, 100)}%` }}
+                                  />
+                                </div>
+                              )}
+                              {isWarning && !isUnlimited && (
+                                <p className={`text-xs ${isCritical ? 'text-red-600' : 'text-amber-600'}`}>
+                                  {isCritical
+                                    ? `⚠️ You've exceeded ${Math.floor(metric.percentage)}% of your limit. Upgrade to continue.`
+                                    : `⚠️ You're using ${metric.percentage}% of your limit.`}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-2xl border border-border bg-white p-6 text-sm text-muted-foreground">
+                  Unable to load usage data. Please refresh the page.
+                </div>
+              )}
+            </div>
+          )}
+
         </div>
 
         {feedback && (
@@ -1286,7 +1408,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Sticky save bar — hidden on self-saving tabs */}
-      {activeTab !== 'milestones' && activeTab !== 'team' && <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-white/95 backdrop-blur-sm px-6 py-3">
+      {activeTab !== 'milestones' && activeTab !== 'team' && activeTab !== 'integrations' && activeTab !== 'usage-plan' && <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-white/95 backdrop-blur-sm px-6 py-3">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-4">
           <span className="text-xs text-muted-foreground">
             {dirty ? "You have unsaved changes" : "Settings"}
@@ -1309,6 +1431,14 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>}
+
+      <UpgradeModal
+        open={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        currentPlan={usageData?.plan || null}
+        usage={usageData?.usage || []}
+        limitedMetrics={limitedMetrics}
+      />
     </main>
   );
 }

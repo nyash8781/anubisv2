@@ -1,7 +1,6 @@
 import type {
   ContractorProposalSettings,
   PaymentTerm,
-  BusinessProfile,
   ProposalBranding,
   TaxSettings,
   DefaultTextBlocks,
@@ -33,17 +32,7 @@ export const DEFAULT_PAYMENT_TERMS: PaymentTerm[] = [
   },
 ]
 
-export const DEFAULT_BUSINESS_PROFILE: BusinessProfile = {
-  companyName: '',
-  contactName: '',
-  email: '',
-  phone: '',
-  website: '',
-  businessAddress: '',
-  licenseNumber: '',
-  insuranceInfo: '',
-  logoUrl: '',
-}
+// BusinessProfile moved to top-level user_settings (settings page "Company Profile" tab)
 
 export const DEFAULT_BRANDING: ProposalBranding = {
   templateStyle: 'modern',
@@ -98,7 +87,6 @@ export const DEFAULT_AI_PROMPT_SETTINGS: AIPromptSettings = {
 }
 
 export const DEFAULT_PROPOSAL_SETTINGS: ContractorProposalSettings = {
-  businessProfile: DEFAULT_BUSINESS_PROFILE,
   branding: DEFAULT_BRANDING,
   paymentTerms: DEFAULT_PAYMENT_TERMS,
   taxSettings: DEFAULT_TAX_SETTINGS,
@@ -111,7 +99,6 @@ export function mergeProposalSettings(
 ): ContractorProposalSettings {
   if (!stored) return DEFAULT_PROPOSAL_SETTINGS
   return {
-    businessProfile: { ...DEFAULT_BUSINESS_PROFILE, ...(stored.businessProfile ?? {}) },
     branding: { ...DEFAULT_BRANDING, ...(stored.branding ?? {}) },
     paymentTerms:
       stored.paymentTerms && stored.paymentTerms.length > 0

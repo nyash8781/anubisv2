@@ -2,9 +2,12 @@ const { Router } = require('express');
 const { randomBytes } = require('crypto');
 const { requireAuth } = require('../middleware/auth');
 const { getDb, useSupabase } = require('../db/index');
+const { supabaseServiceClient } = require('../db/client');
 const { validate, proposalSchema, proposalStatusTransitionSchema, proposalSendSchema } = require('../schemas');
 const logger = require('../lib/logger');
 const { isServiceConfigured, env } = require('../config/env');
+const usageService = require('../services/usageService');
+const entitlementService = require('../services/entitlementService');
 
 // Admin store for share-link + version-snapshot creation. The send route runs
 // under user auth, but the share link rows are looked up later by token via
@@ -17,6 +20,17 @@ const adminStore = useSupabase
 function makeShareToken() {
   // 32 URL-safe chars ~= 192 bits of entropy
   return randomBytes(24).toString('base64url');
+}
+
+// Helper: Get organization ID for a user
+async function getOrganizationIdForUser(userId) {
+  if (!supabaseServiceClient || !userId) return null;
+  const { data } = await supabaseServiceClient
+    .from('organizations')
+    .select('id')
+    .eq('owner_user_id', userId)
+    .single();
+  return data?.id || null;
 }
 
 const router = Router();
@@ -146,6 +160,28 @@ router.post('/:id/send', requireAuth, validate(proposalSendSchema), async (req, 
   const db = getDb(req.user.id);
   const { to, expires_at } = req.body;
   try {
+    // Get organization ID for usage tracking and limit enforcement (Phase E)
+    const organizationId = await getOrganizationIdForUser(req.user.id);
+
+    // Check email sending limit (Phase E)
+    if (organizationId) {
+      const emailCheck = await entitlementService.checkUsageLimit(
+        organizationId,
+        'emails_sent',
+        1
+      );
+      if (!emailCheck.allowed) {
+        return res.status(402).json({
+          error: 'Email sending limit reached',
+          reason: emailCheck.reason,
+          used: emailCheck.used,
+          limit: emailCheck.limit,
+          plan: emailCheck.planName,
+          upgradeUrl: emailCheck.upgradeUrl,
+        });
+      }
+    }
+
     const current = await db.getProposal(req.params.id);
     if (!current) return res.status(404).json({ error: 'Proposal not found' });
     if (current.status !== 'ready' && current.status !== 'sent') {
@@ -249,6 +285,15 @@ router.post('/:id/send', requireAuth, validate(proposalSendSchema), async (req, 
           text: `${req.body.message || 'Please find your proposal.'}\n\nReview: ${shareUrl}`,
         });
         emailSent = true;
+
+        // Log usage event (fire-and-forget, Phase E)
+        if (organizationId) {
+          usageService.log(organizationId, req.user.id, 'email_sent', {
+            count: 1,
+            template: 'proposal_share',
+            proposal_id: req.params.id,
+          });
+        }
       } catch (err) {
         logger.error({ err }, 'Resend proposal email send failed — share link still created');
         emailError = err.message;

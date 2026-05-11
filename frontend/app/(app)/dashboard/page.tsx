@@ -11,12 +11,18 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { AlertCircle, RefreshCw } from 'lucide-react'
+import { AlertCircle, RefreshCw, TrendingUp } from 'lucide-react'
 import { apiGet } from '@/lib/api'
 import type { Job } from '@/types/job'
 import { useMilestones } from '@/lib/milestones-context'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SetupChecklist } from '@/components/onboarding/SetupChecklist'
+
+type UsageData = {
+  plan: { name: string; slug: string; priceMonthly: number; startedAt: string } | null;
+  usage: Array<{ metricKey: string; used: number; limit: number; percentage: number }>;
+  renewalDate: string | null;
+};
 
 function toNum(val?: string | number): number {
   if (!val) return 0
@@ -70,6 +76,8 @@ export default function DashboardPage() {
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
+  const [usageData, setUsageData] = useState<UsageData | null>(null)
+  const [usageLoading, setUsageLoading] = useState(false)
 
   // Dynamic milestones from settings
   const { milestones } = useMilestones()
@@ -95,7 +103,15 @@ export default function DashboardPage() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { load() }, [])
+  const loadUsage = () => {
+    setUsageLoading(true)
+    apiGet<UsageData>('/settings/usage')
+      .then((data) => setUsageData(data))
+      .catch(() => setUsageData(null))
+      .finally(() => setUsageLoading(false))
+  }
+
+  useEffect(() => { load(); loadUsage() }, [])
 
   const metrics = useMemo(() => {
     const leads = jobs.filter((j) => !j.milestone || j.milestone === 'Lead')
@@ -274,6 +290,35 @@ export default function DashboardPage() {
                 </div>
               ))}
             </section>
+
+            {/* AI Usage Counter */}
+            {usageLoading ? (
+              <Skeleton className="h-24 w-full rounded-2xl" />
+            ) : usageData && usageData.usage.length > 0 ? (
+              <Link href="/settings?tab=usage-plan" className="rounded-2xl border border-border bg-white p-5 transition hover:border-primary/40 hover:bg-primary/5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                      <TrendingUp className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      {usageData.usage.find(m => m.metricKey === 'ai_generations') ? (
+                        <>
+                          <div className="text-xs uppercase tracking-wide text-muted-foreground">AI Calls This Month</div>
+                          <div className="mt-1 text-sm font-medium text-foreground">
+                            {usageData.usage.find(m => m.metricKey === 'ai_generations')?.used || 0} / {usageData.usage.find(m => m.metricKey === 'ai_generations')?.limit || '∞'}
+                          </div>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-muted-foreground">View Usage</div>
+                    <div className="text-sm font-medium text-primary">→</div>
+                  </div>
+                </div>
+              </Link>
+            ) : null}
 
             <ChartCard title="Open Projects by Milestone" subtitle="Active jobs across all non-terminal milestone stages">
               <ResponsiveContainer width="100%" height={260}>

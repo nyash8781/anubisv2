@@ -35,7 +35,16 @@ export function ProposalPreviewModal({
 
   if (!open) return null
 
-  const bp = proposalSettings.businessProfile
+  const bp = {
+    logoUrl: '',
+    companyName: '',
+    contactName: '',
+    phone: '',
+    email: '',
+    website: '',
+    businessAddress: '',
+    licenseNumber: '',
+  }
   const textBlocks = proposalSettings.defaultTextBlocks
   const paymentTerms = proposalSettings.paymentTerms
   const today = new Date().toLocaleDateString('en-US', {

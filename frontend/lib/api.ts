@@ -30,14 +30,29 @@ async function authHeaders(): Promise<Record<string, string>> {
 async function handleResponse<T>(res: Response, label: string): Promise<T> {
   if (!res.ok) {
     let details = ''
+    let body: any = {}
+
     try {
-      const body = await res.json()
+      body = await res.json()
       const msg = body?.error || ''
       const det = body?.details || ''
       details = det ? `${msg}: ${det}` : msg || JSON.stringify(body)
     } catch {
       details = await res.text().catch(() => '')
     }
+
+    // Handle 402 Payment Required (usage limit exceeded) with special error format
+    if (res.status === 402) {
+      const err = new Error(`Usage limit exceeded: ${body?.reason || 'limit reached'}`) as any
+      err.status = 402
+      err.reason = body?.reason
+      err.used = body?.used
+      err.limit = body?.limit
+      err.plan = body?.plan
+      err.upgradeUrl = body?.upgradeUrl
+      throw err
+    }
+
     throw new Error(`${label} ${res.status}: ${details || 'request failed'}`)
   }
   return res.json() as Promise<T>

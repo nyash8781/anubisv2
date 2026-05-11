@@ -1,11 +1,25 @@
 const { Router } = require('express');
 const { requireAuth } = require('../middleware/auth');
 const { getDb } = require('../db/index');
+const { supabaseServiceClient } = require('../db/client');
 const aiProvider = require('../ai-provider');
+const usageService = require('../services/usageService');
+const entitlementService = require('../services/entitlementService');
 const logger = require('../lib/logger');
 const { env, isServiceConfigured } = require('../config/env');
 
 const router = Router();
+
+// Helper: Get organization ID for a user
+async function getOrganizationIdForUser(userId) {
+  if (!supabaseServiceClient || !userId) return null;
+  const { data } = await supabaseServiceClient
+    .from('organizations')
+    .select('id')
+    .eq('owner_user_id', userId)
+    .single();
+  return data?.id || null;
+}
 
 // POST /outreach/generate
 // Generate personalized AI messages for selected leads.
@@ -21,6 +35,28 @@ router.post('/generate', requireAuth, async (req, res) => {
 
   const db = getDb(req.user.id);
   try {
+    // Get organization ID for usage tracking and limit enforcement (Phase E)
+    const organizationId = await getOrganizationIdForUser(req.user.id);
+
+    // Check AI generation limit before generating (Phase E)
+    if (organizationId) {
+      const limitCheck = await entitlementService.checkUsageLimit(
+        organizationId,
+        'ai_generations',
+        1
+      );
+      if (!limitCheck.allowed) {
+        return res.status(402).json({
+          error: 'AI generation limit reached',
+          reason: limitCheck.reason,
+          used: limitCheck.used,
+          limit: limitCheck.limit,
+          plan: limitCheck.planName,
+          upgradeUrl: limitCheck.upgradeUrl,
+        });
+      }
+    }
+
     const allJobs = await db.readJobs();
     const selected = allJobs.filter((j) => job_ids.includes(j.id));
     if (selected.length === 0) {
@@ -78,8 +114,51 @@ router.post('/send', requireAuth, async (req, res) => {
   }
 
   const db = getDb(req.user.id);
+  const organizationId = await getOrganizationIdForUser(req.user.id);
   const settings = await db.getSettings().catch(() => ({}));
   const results = [];
+
+  // Count messages by type (Phase E)
+  const emailCount = channel === 'email' ? messages.length : 0;
+  const smsCount = channel === 'sms' ? messages.length : 0;
+
+  // Check email limit if sending emails (Phase E)
+  if (emailCount > 0 && organizationId) {
+    const emailCheck = await entitlementService.checkUsageLimit(
+      organizationId,
+      'emails_sent',
+      emailCount
+    );
+    if (!emailCheck.allowed) {
+      return res.status(402).json({
+        error: 'Email sending limit reached',
+        reason: emailCheck.reason,
+        used: emailCheck.used,
+        limit: emailCheck.limit,
+        plan: emailCheck.planName,
+        upgradeUrl: emailCheck.upgradeUrl,
+      });
+    }
+  }
+
+  // Check SMS limit if sending SMS (Phase E)
+  if (smsCount > 0 && organizationId) {
+    const smsCheck = await entitlementService.checkUsageLimit(
+      organizationId,
+      'sms_sent',
+      smsCount
+    );
+    if (!smsCheck.allowed) {
+      return res.status(402).json({
+        error: 'SMS sending limit reached',
+        reason: smsCheck.reason,
+        used: smsCheck.used,
+        limit: smsCheck.limit,
+        plan: smsCheck.planName,
+        upgradeUrl: smsCheck.upgradeUrl,
+      });
+    }
+  }
 
   for (const m of messages) {
     if (!m.to || !m.message) {
@@ -136,6 +215,23 @@ router.post('/send', requireAuth, async (req, res) => {
           await db.logActivity(m.job_id, req.user.id, actionType, 'Outreach campaign message sent');
         }
       } catch { /* non-fatal */ }
+
+      // Log usage event (fire-and-forget, Phase E)
+      if (organizationId) {
+        if (channel === 'email') {
+          usageService.log(organizationId, req.user.id, 'email_sent', {
+            count: 1,
+            template: 'outreach_personalized',
+            job_id: m.job_id,
+          });
+        } else if (channel === 'sms') {
+          usageService.log(organizationId, req.user.id, 'sms_sent', {
+            count: 1,
+            template: 'outreach_personalized',
+            job_id: m.job_id,
+          });
+        }
+      }
 
       results.push({ job_id: m.job_id, ok: true });
     } catch (err) {

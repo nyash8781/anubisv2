@@ -11,7 +11,14 @@ function getClient() {
   return _client;
 }
 
+// Generate text response (legacy interface for backward compatibility)
 async function generate(userMessage, systemMessage = null) {
+  const result = await generateWithUsage(userMessage, systemMessage);
+  return result.text;
+}
+
+// Generate with usage metrics
+async function generateWithUsage(userMessage, systemMessage = null) {
   if (!env.anthropicApiKey) {
     const err = new Error('ANTHROPIC_API_KEY is not configured on this server.');
     err.status = 503;
@@ -38,7 +45,13 @@ async function generate(userMessage, systemMessage = null) {
         .filter((block) => block.type === 'text')
         .map((block) => block.text)
         .join('\n');
-      return text;
+
+      return {
+        text,
+        inputTokens: response.usage?.input_tokens || 0,
+        outputTokens: response.usage?.output_tokens || 0,
+        model: env.anthropicModel,
+      };
     } catch (err) {
       const isRetryable = err.status === 529 || err.status === 500;
       if (isRetryable && attempt < MAX_RETRIES) {
@@ -50,4 +63,4 @@ async function generate(userMessage, systemMessage = null) {
   }
 }
 
-module.exports = { AI_PROVIDER, generate };
+module.exports = { AI_PROVIDER, generate, generateWithUsage };
